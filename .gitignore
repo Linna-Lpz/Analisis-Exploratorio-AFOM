@@ -1,4 +1,13 @@
+# Ignorar extensiones de datos específicos en cualquier lugar
 .Rproj.user
 .Rhistory
 .RData
+.RDataTpm
 .Ruserdata
+.rds
+
+# Ignorar toda la carpeta de datos y resultados
+Datos/
+Resultados/
+
+

@@ -5,24 +5,20 @@
 library(here) 
 
 # 1. Variable de Control Principal
-ORIGEN_DATOS <- "OrthoMaM"
+NOMBRE_BDD <- "OrthoMaM" # Nombre de la base de datos
 EXTENSION_ARBOLES <- ".rootree"
+CARPETA_ARBOLES <- "archiveTreesV12" # Nombre original de la carpeta con árboles
 
 # 2. Definición de Rutas Base 
 DIR_INPUT     <- here("Datos", "Original")
-DIR_PROCESSED <- here("Datos", "Procesados")     # Matrices y coordenadas
-DIR_RESULTS   <- here("Resultados", "Figuras")    # Gráficos
+DIR_PROCESSED <- here("Datos", "Procesados")     
+DIR_RESULTS   <- here("Resultados")
 DIR_SCRIPTS   <- here("Scripts")
 
-# 3. Generación de Rutas Dinámicas 
-ruta_arboles_input <- file.path(DIR_INPUT, paste0(ORIGEN_DATOS, "_arboles", EXTENSION_ARBOLES))
-ruta_matriz_output <- file.path(DIR_PROCESSED, paste0("matriz_RF_", ORIGEN_DATOS, ".rds"))
-ruta_coord_output  <- file.path(DIR_PROCESSED, paste0("coordenadas_MDS_", ORIGEN_DATOS, ".rds"))
-
 # ------------------------------------------------------------------------------
-# 4. Validación e Infraestructura (Self-healing)
+# 3. Validación e Infraestructura
 # ------------------------------------------------------------------------------
-carpetas_necesarias <- c(DIR_INPUT, DIR_PROCESSED, DIR_RESULTS, DIR_SCRIPTS)
+carpetas_necesarias <- c(DIR_PROCESSED, DIR_RESULTS)
 
 for (carpeta in carpetas_necesarias) {
   if (!dir.exists(carpeta)) {
@@ -32,4 +28,4 @@ for (carpeta in carpetas_necesarias) {
 }
 
 # Mensaje de confirmación final
-message("Configuración cargada y entorno preparado para: ", ORIGEN_DATOS)
+message("Configuración cargada y entorno preparado para: ", NOMBRE_BDD)
