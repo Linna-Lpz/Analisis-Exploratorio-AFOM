@@ -98,7 +98,8 @@ cat("\n=== CARGANDO ÁRBOLES SELECCIONADOS EN MEMORIA ===\n")
 
 arboles_raw <- leer_bosque_zip(
   directorio  = file.path(DIR_INPUT, CARPETA_ARBOLES),
-  ext_interna = EXTENSION_ARBOLES
+  ext_interna = EXTENSION_ARBOLES,
+  dir_cache = DIR_CACHE
 )
 
 # Conservar solo los árboles cuyo nombre de ZIP está en los seleccionados

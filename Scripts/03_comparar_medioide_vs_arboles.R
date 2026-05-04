@@ -27,7 +27,8 @@ cat("Árbol medioide identificado:", nombre_medioide, "\n")
 
 # -- Releer todos los árboles desde los ZIP
 arboles <- leer_bosque_zip(directorio = file.path(DIR_INPUT, CARPETA_ARBOLES),
-                           ext_interna = EXTENSION_ARBOLES
+                           ext_interna = EXTENSION_ARBOLES,
+                           dir_cache   = DIR_CACHE
                            ) 
 
 # -- Extraer el medioide como tree1 (fijo para todas las comparaciones)
