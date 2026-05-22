@@ -167,3 +167,100 @@ agregar_hoja_formateada <- function(wb, nombre_hoja, titulo_tabla, datos, anchos
   return(wb)
 }
 message("Funciones globales cargadas correctamente.")
+
+# ==============================================================================
+# FUNCIÓN 3: Auxiliar para leer hoja de asignaciones desde Excel
+# ==============================================================================
+leer_asignaciones_xlsx <- function(ruta_xlsx, metodo) {
+  
+  if (!file.exists(ruta_xlsx)) {
+    warning(sprintf("No se encontró el archivo de %s: %s", metodo, ruta_xlsx))
+    return(NULL)
+  }
+  
+  # Verificar que la hoja existe dentro del libro
+  hojas_disponibles <- getSheetNames(ruta_xlsx)
+  
+  if (!"Asignaciones_K_Optimo" %in% hojas_disponibles) {
+    warning(sprintf("Hoja 'Asignaciones_K_Optimo' no encontrada en %s.\nHojas disponibles: %s",
+                    ruta_xlsx, paste(hojas_disponibles, collapse = ", ")))
+    return(NULL)
+  }
+  
+  df <- read.xlsx(ruta_xlsx,
+                  sheet     = "Asignaciones_K_Optimo",
+                  startRow  = 2,          # fila 1 = título de agregar_hoja_formateada
+                  colNames  = TRUE)
+  
+  # Estandarizar: conservar solo Arbol + Cluster
+  df$Arbol   <- as.character(df$Arbol)
+  df$Cluster <- as.factor(df$Cluster)
+  
+  cat(sprintf("  [%s] %d árboles leídos desde %s\n", metodo, nrow(df), basename(ruta_xlsx)))
+  
+  return(df[, c("Arbol", "Cluster")])
+}
+  
+  # ==============================================================================
+  # FUNCIÓN 4: Leer y unir etiquetas de clustering al dataframe de coordenadas
+  # ==============================================================================
+  #' Lee las asignaciones de K-Means, PAM y CLARA desde sus Excel respectivos
+  #' y las une al dataframe de coordenadas por la columna "Arbol".
+  #'
+  #' @param coords_df   Dataframe con coordenadas (debe tener columna "Arbol")
+  #' @param dir_results Directorio donde están los Excel de resultados (DIR_RESULTS)
+  #' @param nombre_kmeans Nombre del archivo Excel de K-Means (default: "kmeans_resultados.xlsx")
+  #' @param nombre_pam    Nombre del archivo Excel de PAM   (default: "pam_resultados.xlsx")
+  #' @param nombre_clara  Nombre del archivo Excel de CLARA (default: "clara_resultados.xlsx")
+  #' @return Lista con dos elementos:
+  #'         $coords_df : dataframe enriquecido con columnas Cluster_KMeans, Cluster_PAM, Cluster_CLARA
+  #'         $k_optimos : named vector con el k usado por cada método (para subtítulos de gráficos)
+  
+  unir_etiquetas_clustering <- function(coords_df,
+                                        dir_results,
+                                        nombre_kmeans = "kmeans_resultados.xlsx",
+                                        nombre_pam    = "pam_resultados.xlsx",
+                                        nombre_clara  = "clara_resultados.xlsx") {
+    
+    cat("\n=== UNIENDO ETIQUETAS DE CLUSTERING ===\n")
+    
+    # Verificar que coords_df tiene la columna requerida
+    if (!"Arbol" %in% colnames(coords_df)) {
+      stop("coords_df debe contener una columna llamada 'Arbol'.")
+    }
+    
+    # Leer los tres métodos
+    kmeans_asig <- leer_asignaciones_xlsx(file.path(dir_results, nombre_kmeans), "K-Means")
+    pam_asig    <- leer_asignaciones_xlsx(file.path(dir_results, nombre_pam),    "PAM")
+    clara_asig  <- leer_asignaciones_xlsx(file.path(dir_results, nombre_clara),  "CLARA")
+    
+    # Unir cada método renombrando la columna Cluster antes del merge
+    if (!is.null(kmeans_asig)) {
+      kmeans_asig <- setNames(kmeans_asig, c("Arbol", "Cluster_KMeans"))
+      coords_df   <- merge(coords_df, kmeans_asig, by = "Arbol", all.x = TRUE)
+    }
+    
+    if (!is.null(pam_asig)) {
+      pam_asig  <- setNames(pam_asig, c("Arbol", "Cluster_PAM"))
+      coords_df <- merge(coords_df, pam_asig, by = "Arbol", all.x = TRUE)
+    }
+    
+    if (!is.null(clara_asig)) {
+      clara_asig <- setNames(clara_asig, c("Arbol", "Cluster_CLARA"))
+      coords_df  <- merge(coords_df, clara_asig, by = "Arbol", all.x = TRUE)
+    }
+    
+    # Vector de k óptimos para usar en subtítulos de gráficos
+    k_optimos <- c(
+      KMeans = if (!is.null(kmeans_asig)) length(unique(kmeans_asig$Cluster_KMeans)) else NA,
+      PAM    = if (!is.null(pam_asig))    length(unique(pam_asig$Cluster_PAM))       else NA,
+      CLARA  = if (!is.null(clara_asig))  length(unique(clara_asig$Cluster_CLARA))   else NA
+    )
+    
+    cat("\nColumnas del dataframe enriquecido:\n")
+    print(colnames(coords_df))
+    cat("Primeras filas:\n")
+    print(head(coords_df, 5))
+    
+    return(list(coords_df = coords_df, k_optimos = k_optimos))
+  }

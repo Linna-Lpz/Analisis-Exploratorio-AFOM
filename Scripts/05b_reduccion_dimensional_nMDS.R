@@ -12,7 +12,7 @@ source(here::here("Scripts", "config.R"))
 source(here::here("Scripts", "00_funciones_globales.R"))
 
 # =============================================================================
-# 1. CARGAR MATRIZ RF DESDE CACHÉ (generada en script 04)
+# CARGAR MATRIZ RF DESDE CACHÉ (generada en script 04)
 # =============================================================================
 cat("=== CARGANDO MATRIZ RF ===\n")
 
@@ -29,7 +29,7 @@ dist_rf         <- as.dist(matriz_cuadrada)
 cat("Matriz cargada:", nrow(matriz_cuadrada), "x", ncol(matriz_cuadrada), "\n")
 
 # =============================================================================
-# 2. CALCULAR nMDS — con caché condicional
+# CALCULAR nMDS — con caché condicional
 # =============================================================================
 cat("\n=== CALCULANDO nMDS ===\n")
 
@@ -80,7 +80,7 @@ if (file.exists(ruta_cache_nmds)) {
 }
 
 # =============================================================================
-# 3. EVALUAR CALIDAD — STRESS
+# EVALUAR CALIDAD — STRESS
 # =============================================================================
 cat("\n=== EVALUACIÓN DE CALIDAD ===\n")
 
@@ -94,7 +94,7 @@ cat(sprintf("Convergencia  : %s\n",
 cat(sprintf("Tiempo        : %.1f segundos\n", tiempo_nmds["elapsed"]))
 
 # =============================================================================
-# 4. CONSTRUIR DATAFRAME DE COORDENADAS
+# CONSTRUIR DATAFRAME DE COORDENADAS
 # =============================================================================
 coords_nmds <- scores(nmds_resultado, display = "sites")
 
@@ -109,7 +109,7 @@ cat("\nPrimeras filas de coordenadas:\n")
 print(head(coords_df, 5))
 
 # =============================================================================
-# 5. GRÁFICO PRINCIPAL — distribución de árboles
+# GRÁFICO PRINCIPAL — distribución de árboles
 # =============================================================================
 cat("\n=== GENERANDO GRÁFICOS ===\n")
 
@@ -142,7 +142,7 @@ ggsave(ruta_grafico, plot = p_nmds, width = 10, height = 7, dpi = 300)
 cat("Gráfico nMDS guardado:", ruta_grafico, "\n")
 
 # =============================================================================
-# 6. SHEPARD PLOT — diagnóstico de ajuste
+# SHEPARD PLOT — diagnóstico de ajuste
 # Compara distancias originales RF vs distancias en espacio nMDS
 # Un buen ajuste = puntos cercanos a la línea escalonada
 # =============================================================================
@@ -175,7 +175,7 @@ ggsave(ruta_shepard, plot = p_shepard, width = 8, height = 6, dpi = 300)
 cat("Shepard plot guardado:", ruta_shepard, "\n")
 
 # =============================================================================
-# 7. EXPORTAR COORDENADAS Y DIAGNÓSTICO A EXCEL
+# EXPORTAR COORDENADAS Y DIAGNÓSTICO A EXCEL
 # =============================================================================
 cat("\n=== EXPORTANDO RESULTADOS ===\n")
 

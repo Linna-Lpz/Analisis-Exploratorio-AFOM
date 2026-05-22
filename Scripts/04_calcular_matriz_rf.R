@@ -15,7 +15,7 @@ if (!dir.exists(DIR_CACHE)) dir.create(DIR_CACHE, recursive = TRUE)
 ruta_cache_matriz <- file.path(DIR_CACHE, "matriz_rf.rds")
 
 # =============================================================================
-# 1. LEER ÁRBOLES
+# LEER ÁRBOLES
 # =============================================================================
 cat("Iniciando lectura de árboles...\n")
 tiempo_lectura <- system.time({
@@ -27,7 +27,7 @@ tiempo_lectura <- system.time({
 })
 
 # =============================================================================
-# 2. CALCULAR MATRIZ RF — con caché condicional
+# CALCULAR MATRIZ RF — con caché condicional
 # =============================================================================
 if (file.exists(ruta_cache_matriz)) {
   cat("Matriz RF encontrada en caché. Cargando...\n")
@@ -51,19 +51,19 @@ if (file.exists(ruta_cache_matriz)) {
 }
 
 # =============================================================================
-# 3. EXPORTAR TAMBIÉN COMO CSV (opcional, para inspección externa)
+# EXPORTAR TAMBIÉN COMO CSV (opcional, para inspección externa)
 # =============================================================================
-ruta_csv <- file.path(DIR_RESULTS, "matriz_rf_conjunto.csv")
-write.table(matriz_cuadrada,
-            file      = ruta_csv,
-            sep       = ";",
-            row.names = TRUE,
-            col.names = NA,
-            quote     = FALSE)
-cat("Copia CSV guardada en:", ruta_csv, "\n")
+#ruta_csv <- file.path(DIR_RESULTS, "matriz_rf_conjunto.csv")
+#write.table(matriz_cuadrada,
+#            file      = ruta_csv,
+#            sep       = ";",
+#            row.names = TRUE,
+#            col.names = NA,
+#            quote     = FALSE)
+#cat("Copia CSV guardada en:", ruta_csv, "\n")
 
 # =============================================================================
-# 4. REPORTE DE TIEMPOS EN EXCEL
+# REPORTE DE TIEMPOS EN EXCEL
 # =============================================================================
 t_lectura <- as.numeric(tiempo_lectura)
 t_matriz  <- as.numeric(tiempo_matriz)

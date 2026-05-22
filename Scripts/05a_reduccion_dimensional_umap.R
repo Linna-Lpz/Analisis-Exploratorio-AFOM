@@ -1,149 +1,242 @@
 # =============================================================================
 # 05_reduccion_dimensional.R
-# UMAP sobre la matriz RF normalizada — con caché .rds
-# Salidas: coordenadas en Excel, gráfico ggplot2, caché .rds
+# VISUALIZACIÓN UMAP + ETIQUETAS DE CLUSTERING (K-Means, PAM, CLARA)
 # =============================================================================
-
 library(uwot)
 library(ggplot2)
+library(patchwork)   # para paneles comparativos
 library(openxlsx)
 
 source(here::here("Scripts", "config.R"))
 source(here::here("Scripts", "00_funciones_globales.R"))
 
 # =============================================================================
-# CARGAR MATRIZ RF DESDE CACHÉ (generada en script 04)
+# CARGAR MATRIZ RF
 # =============================================================================
 cat("=== CARGANDO MATRIZ RF ===\n")
 
 ruta_cache_matriz <- file.path(DIR_CACHE, "matriz_rf.rds")
 
-if (!file.exists(ruta_cache_matriz)) {
-  stop("No se encontró la matriz RF en caché: ", ruta_cache_matriz,
-       "\nEjecuta primero el script 04_calcular_matriz.R")
+# Si no existe caché .rds, leer desde CSV
+if (file.exists(ruta_cache_matriz)) {
+  matriz_cuadrada <- readRDS(ruta_cache_matriz)
+  cat("Matriz cargada desde caché RDS.\n")
+} else {
+  cat("Caché RDS no encontrado. Leyendo desde CSV...\n")
+  matriz_cuadrada <- as.matrix(
+    read.table(file.path(DIR_RESULTS, "matriz_rf_conjunto.csv"),
+               sep = ";", header = TRUE, row.names = 1, check.names = FALSE)
+  )
+  saveRDS(matriz_cuadrada, ruta_cache_matriz)
+  cat("Matriz guardada en caché RDS para uso futuro.\n")
 }
 
-matriz_cuadrada <- readRDS(ruta_cache_matriz)
 cat("Matriz cargada:", nrow(matriz_cuadrada), "x", ncol(matriz_cuadrada), "\n")
 
 # =============================================================================
-# CALCULAR UMAP — con caché condicional
+# CALCULAR UMAP (con caché condicional)
 # =============================================================================
 cat("\n=== CALCULANDO UMAP ===\n")
 
-ruta_cache_umap <- file.path(DIR_CACHE, "umap2_coords.rds")
+ruta_cache_umap <- file.path(DIR_CACHE, "umap_coords.rds")
 
-# Hiperparámetros UMAP — ajustables según el tamaño del dataset
-N_NEIGHBORS  <- 15    # Vecinos locales: más alto = estructura más global
-MIN_DIST     <- 0.1   # Compactación de clusters: más bajo = clusters más densos
-N_COMPONENTS <- 2     # Dimensiones de salida (2 para visualización y k-means)
+N_NEIGHBORS  <- 15
+MIN_DIST     <- 0.1
+N_COMPONENTS <- 2
 SEED         <- 42
 
 if (file.exists(ruta_cache_umap)) {
   cat("UMAP encontrado en caché. Cargando...\n")
-  tiempo_umap <- system.time({
-    umap_coords <- readRDS(ruta_cache_umap)
-  })
+  umap_coords <- readRDS(ruta_cache_umap)
+  tiempo_umap <- NA
 } else {
   cat("Calculando UMAP (puede tardar varios minutos)...\n")
-  tiempo_umap <- system.time({
-    set.seed(SEED)
-    umap_coords <- umap(
-      X            = as.dist(matriz_cuadrada),   # <- conversión clave
-      n_neighbors  = N_NEIGHBORS,
-      min_dist     = MIN_DIST,
-      n_components = N_COMPONENTS,
-      n_threads   = parallel::detectCores() - 1,  # paralelizar
-      verbose      = TRUE
-    )
-    saveRDS(umap_coords, file = ruta_cache_umap)
-  })
-  cat("UMAP calculado y guardado en caché.\n")
+  tiempo_inicio <- proc.time()
+  
+  set.seed(SEED)
+  umap_coords <- umap(
+    X           = as.dist(matriz_cuadrada),
+    n_neighbors = N_NEIGHBORS,
+    min_dist    = MIN_DIST,
+    n_components = N_COMPONENTS,
+    n_threads   = parallel::detectCores() - 1,
+    verbose     = TRUE
+  )
+  
+  tiempo_umap <- as.numeric(proc.time() - tiempo_inicio)[3]
+  saveRDS(umap_coords, ruta_cache_umap)
+  cat(sprintf("UMAP calculado en %.1f segundos y guardado en caché.\n", tiempo_umap))
 }
 
-cat("Tiempo UMAP:", round(tiempo_umap["elapsed"], 1), "segundos\n")
-cat("Dimensiones resultado:", nrow(umap_coords), "x", ncol(umap_coords), "\n")
+cat("Dimensiones UMAP:", nrow(umap_coords), "x", ncol(umap_coords), "\n")
 
 # =============================================================================
-# CONSTRUIR DATAFRAME DE COORDENADAS
+# CONSTRUIR DATAFRAME BASE DE COORDENADAS
 # =============================================================================
 coords_df <- data.frame(
-  nombre_arbol = rownames(matriz_cuadrada),
-  UMAP_1       = umap_coords[, 1],
-  UMAP_2       = umap_coords[, 2],
+  Arbol  = rownames(matriz_cuadrada),
+  UMAP_1 = umap_coords[, 1],
+  UMAP_2 = umap_coords[, 2],
   stringsAsFactors = FALSE
 )
 
-cat("\nPrimeras filas de coordenadas:\n")
-print(head(coords_df, 5))
+# =============================================================================
+# LEER Y UNIR ETIQUETAS DE CLUSTERING
+# =============================================================================
+resultado    <- unir_etiquetas_clustering(coords_df, DIR_RESULTS)
+coords_df    <- resultado$coords_df
+k_optimos    <- resultado$k_optimos
+
+# Extraer k por método para subtítulos
+k_km  <- ifelse(is.na(k_optimos["KMeans"]), "?", k_optimos["KMeans"])
+k_pam <- ifelse(is.na(k_optimos["PAM"]),    "?", k_optimos["PAM"])
+k_cl  <- ifelse(is.na(k_optimos["CLARA"]),  "?", k_optimos["CLARA"])
 
 # =============================================================================
-# GRÁFICO ESTÁTICO CON ggplot2
+# FUNCIÓN PARA GRAFICAR UN MÉTODO
 # =============================================================================
-cat("\n=== GENERANDO GRÁFICO ===\n")
-
-p <- ggplot(coords_df, aes(x = UMAP_1, y = UMAP_2)) +
-  geom_point(
-    color = "steelblue",
-    alpha = 0.6,
-    size  = 1.5
-  ) +
-  labs(
-    title    = paste0("UMAP — Matriz RF Normalizada (", NOMBRE_BDD, ")"),
-    subtitle = paste0(
-      "n_neighbors = ", N_NEIGHBORS,
-      "  |  min_dist = ", MIN_DIST,
-      "  |  n = ", nrow(coords_df), " árboles"
-    ),
-    x = "UMAP 1",
-    y = "UMAP 2",
-    caption = "Distancia Robinson-Foulds normalizada"
-  ) +
-  theme_minimal(base_size = 12) +
-  theme(
-    plot.title    = element_text(face = "bold"),
-    plot.subtitle = element_text(color = "gray40"),
-    plot.caption  = element_text(color = "gray60", size = 8)
-  )
-
-ruta_grafico <- file.path(DIR_RESULTS, paste0("umap_", NOMBRE_BDD, ".png"))
-ggsave(ruta_grafico,
-       plot   = p,
-       width  = 10,
-       height = 7,
-       dpi    = 300)
-
-cat("Gráfico guardado:", ruta_grafico, "\n")
+graficar_clustering <- function(df, col_cluster, titulo, subtitulo = "") {
+  
+  # Verificar que la columna existe
+  if (!col_cluster %in% colnames(df)) {
+    warning(sprintf("Columna '%s' no encontrada. Saltando gráfico.", col_cluster))
+    return(NULL)
+  }
+  
+  n_clusters <- length(unique(na.omit(df[[col_cluster]])))
+  
+  # Paleta de colores discreta — hasta 15 clusters
+  paleta <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00",
+              "#A65628", "#F781BF", "#999999", "#66C2A5", "#FC8D62",
+              "#8DA0CB", "#E78AC3", "#A6D854", "#FFD92F", "#E5C494")
+  
+  ggplot(df, aes(x = UMAP_1, y = UMAP_2, color = .data[[col_cluster]])) +
+    geom_point(alpha = 0.6, size = 1.2) +
+    scale_color_manual(
+      values = paleta[seq_len(n_clusters)],
+      name   = "Cluster",
+      na.value = "grey80"
+    ) +
+    labs(
+      title    = titulo,
+      subtitle = subtitulo,
+      x        = "UMAP 1",
+      y        = "UMAP 2"
+    ) +
+    theme_minimal(base_size = 11) +
+    theme(
+      plot.title      = element_text(face = "bold", size = 12),
+      plot.subtitle   = element_text(color = "gray40", size = 9),
+      legend.position = "bottom",
+      legend.title    = element_text(size = 9),
+      legend.text     = element_text(size = 8)
+    ) +
+    guides(color = guide_legend(override.aes = list(size = 3, alpha = 1)))
+}
 
 # =============================================================================
-# EXPORTAR COORDENADAS A EXCEL
+# GENERAR GRÁFICOS INDIVIDUALES
 # =============================================================================
-cat("\n=== EXPORTANDO COORDENADAS ===\n")
+cat("\n=== GENERANDO GRÁFICOS ===\n")
 
-# Resumen de hiperparámetros para documentar en el Excel
+# Recuperar k óptimo de cada método para el subtítulo
+k_km  <- if (!is.null(kmeans_asig)) length(unique(kmeans_asig$Cluster)) else "?"
+k_pam <- if (!is.null(pam_asig))    length(unique(pam_asig$Cluster))    else "?"
+k_cl  <- if (!is.null(clara_asig))  length(unique(clara_asig$Cluster))  else "?"
+
+p_kmeans <- graficar_clustering(
+  df          = coords_df,
+  col_cluster = "Cluster_KMeans",
+  titulo      = "K-Means",
+  subtitulo   = sprintf("k = %s  |  n = %d árboles", k_km, nrow(coords_df))
+)
+
+p_pam <- graficar_clustering(
+  df          = coords_df,
+  col_cluster = "Cluster_PAM",
+  titulo      = "PAM (K-Medoids)",
+  subtitulo   = sprintf("k = %s  |  n = %d árboles", k_pam, nrow(coords_df))
+)
+
+p_clara <- graficar_clustering(
+  df          = coords_df,
+  col_cluster = "Cluster_CLARA",
+  titulo      = "CLARA",
+  subtitulo   = sprintf("k = %s  |  n = %d árboles", k_cl, nrow(coords_df))
+)
+
+# =============================================================================
+# PANEL COMPARATIVO (3 métodos lado a lado)
+# =============================================================================
+plots_disponibles <- Filter(Negate(is.null), list(p_kmeans, p_pam, p_clara))
+n_plots           <- length(plots_disponibles)
+
+if (n_plots > 0) {
+  
+  panel_comparativo <- wrap_plots(plots_disponibles, ncol = min(n_plots, 3)) +
+    plot_annotation(
+      title   = paste0("Comparación de Algoritmos de Clustering — UMAP (", NOMBRE_BDD, ")"),
+      caption = paste0("Distancia Robinson-Foulds normalizada  |  ",
+                       "UMAP: n_neighbors=", N_NEIGHBORS, ", min_dist=", MIN_DIST),
+      theme   = theme(
+        plot.title   = element_text(face = "bold", size = 14, hjust = 0.5),
+        plot.caption = element_text(color = "gray50", size = 8, hjust = 0.5)
+      )
+    )
+  
+  ruta_panel <- file.path(DIR_RESULTS, paste0("umap_comparativo_clustering_", NOMBRE_BDD, ".png"))
+  ggsave(ruta_panel,
+         plot   = panel_comparativo,
+         width  = 7 * min(n_plots, 3),   # ancho proporcional al número de paneles
+         height = 6,
+         dpi    = 300)
+  
+  cat("Panel comparativo guardado:", ruta_panel, "\n")
+}
+
+# Guardar también gráficos individuales
+graficos_individuales <- list(
+  list(plot = p_kmeans, nombre = "umap_kmeans"),
+  list(plot = p_pam,    nombre = "umap_pam"),
+  list(plot = p_clara,  nombre = "umap_clara")
+)
+
+for (g in graficos_individuales) {
+  if (!is.null(g$plot)) {
+    ruta_g <- file.path(DIR_RESULTS, paste0(g$nombre, "_", NOMBRE_BDD, ".png"))
+    ggsave(ruta_g, plot = g$plot, width = 8, height = 6, dpi = 300)
+    cat("Gráfico guardado:", ruta_g, "\n")
+  }
+}
+
+# =============================================================================
+# EXPORTAR DATAFRAME COMPLETO A EXCEL
+# =============================================================================
+cat("\n=== EXPORTANDO COORDENADAS + ETIQUETAS ===\n")
+
 hiperparametros_df <- data.frame(
-  Parametro = c("n_neighbors", "min_dist", "n_components", "input", "seed",
-                "n_arboles", "tiempo_calculo_s"),
-  Valor     = c(N_NEIGHBORS, MIN_DIST, N_COMPONENTS, "dist (as.dist)", SEED,
-                nrow(coords_df), round(tiempo_umap["elapsed"], 1)),
+  Parametro = c("n_neighbors", "min_dist", "n_components", "seed",
+                "n_arboles",   "tiempo_calculo_s"),
+  Valor     = c(N_NEIGHBORS, MIN_DIST, N_COMPONENTS, SEED,
+                nrow(coords_df),
+                ifelse(is.na(tiempo_umap), "desde caché", round(tiempo_umap, 1))),
   stringsAsFactors = FALSE
 )
 
 wb <- createWorkbook()
 
-agregar_hoja_formateada(wb, "Coordenadas_UMAP",
-                        paste0("Coordenadas UMAP — ", NOMBRE_BDD),
-                        coords_df,
-                        anchos_col = c(40, 18, 18))
+wb <- agregar_hoja_formateada(wb, "Coordenadas_y_Clusters",
+                              paste0("Coordenadas UMAP + Etiquetas de Clustering — ", NOMBRE_BDD),
+                              coords_df,
+                              anchos_col = "auto")
 
-agregar_hoja_formateada(wb, "Hiperparametros",
-                        "Hiperparámetros UMAP",
-                        hiperparametros_df,
-                        anchos_col = c(25, 20))
+wb <- agregar_hoja_formateada(wb, "Hiperparametros_UMAP",
+                              "Hiperparámetros UMAP",
+                              hiperparametros_df,
+                              anchos_col = c(25, 20))
 
-ruta_excel <- file.path(DIR_RESULTS, paste0("umap_coordenadas_", NOMBRE_BDD, ".xlsx"))
+ruta_excel <- file.path(DIR_RESULTS, paste0("umap_clustering_completo_", NOMBRE_BDD, ".xlsx"))
 saveWorkbook(wb, ruta_excel, overwrite = TRUE)
 
-cat("Coordenadas guardadas:", ruta_excel, "\n")
-
+cat("Excel guardado:", ruta_excel, "\n")
 cat("\n=== COMPLETADO ===\n")

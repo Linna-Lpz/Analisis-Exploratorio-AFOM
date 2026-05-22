@@ -12,7 +12,7 @@ source(here::here("Scripts", "config.R"))
 source(here::here("Scripts", "00_funciones_globales.R"))
 
 # =============================================================================
-# 1. CARGAR MATRIZ RF DESDE CACHÉ (generada en script 04)
+# CARGAR MATRIZ RF DESDE CACHÉ (generada en script 04)
 # =============================================================================
 cat("=== CARGANDO MATRIZ RF ===\n")
 
@@ -36,7 +36,7 @@ if (n_duplicados > 0) {
 }
 
 # =============================================================================
-# 2. CALCULAR t-SNE — con caché condicional
+# CALCULAR t-SNE — con caché condicional
 # =============================================================================
 cat("\n=== CALCULANDO t-SNE ===\n")
 
@@ -93,7 +93,7 @@ cat(sprintf("Tiempo t-SNE : %.1f segundos\n", tiempo_tsne["elapsed"]))
 cat(sprintf("Costo final  : %.6f\n", tail(tsne_resultado$itercosts, 1)))
 
 # =============================================================================
-# 3. CONSTRUIR DATAFRAME DE COORDENADAS
+# CONSTRUIR DATAFRAME DE COORDENADAS
 # =============================================================================
 coords_df <- data.frame(
   nombre_arbol = rownames(matriz_cuadrada),
@@ -106,7 +106,7 @@ cat("\nPrimeras filas de coordenadas:\n")
 print(head(coords_df, 5))
 
 # =============================================================================
-# 4. GRÁFICO PRINCIPAL — distribución de árboles
+# GRÁFICO PRINCIPAL — distribución de árboles
 # =============================================================================
 cat("\n=== GENERANDO GRÁFICOS ===\n")
 
@@ -145,7 +145,7 @@ ggsave(ruta_grafico, plot = p_tsne, width = 10, height = 7, dpi = 300)
 cat("Gráfico t-SNE guardado:", ruta_grafico, "\n")
 
 # =============================================================================
-# 5. GRÁFICO DE CONVERGENCIA — evolución del costo KL por iteración
+# GRÁFICO DE CONVERGENCIA — evolución del costo KL por iteración
 # Permite verificar si el algoritmo convergió antes de max_iter
 # =============================================================================
 convergencia_df <- data.frame(
@@ -179,7 +179,7 @@ ggsave(ruta_conv, plot = p_conv, width = 8, height = 5, dpi = 300)
 cat("Gráfico de convergencia guardado:", ruta_conv, "\n")
 
 # =============================================================================
-# 6. EXPORTAR COORDENADAS Y DIAGNÓSTICO A EXCEL
+# EXPORTAR COORDENADAS Y DIAGNÓSTICO A EXCEL
 # =============================================================================
 cat("\n=== EXPORTANDO RESULTADOS ===\n")
 
