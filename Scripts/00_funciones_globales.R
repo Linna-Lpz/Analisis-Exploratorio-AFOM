@@ -171,7 +171,8 @@ message("Funciones globales cargadas correctamente.")
 # ==============================================================================
 # FUNCIÓN 3: Auxiliar para leer hoja de asignaciones desde Excel
 # ==============================================================================
-leer_asignaciones_xlsx <- function(ruta_xlsx, metodo) {
+leer_asignaciones_xlsx <- function(ruta_xlsx, metodo,
+                                   nombre_hoja = "Asignaciones_K_Optimo") {
   
   if (!file.exists(ruta_xlsx)) {
     warning(sprintf("No se encontró el archivo de %s: %s", metodo, ruta_xlsx))
@@ -181,14 +182,14 @@ leer_asignaciones_xlsx <- function(ruta_xlsx, metodo) {
   # Verificar que la hoja existe dentro del libro
   hojas_disponibles <- getSheetNames(ruta_xlsx)
   
-  if (!"Asignaciones_K_Optimo" %in% hojas_disponibles) {
-    warning(sprintf("Hoja 'Asignaciones_K_Optimo' no encontrada en %s.\nHojas disponibles: %s",
-                    ruta_xlsx, paste(hojas_disponibles, collapse = ", ")))
+  if (!nombre_hoja %in% hojas_disponibles) {
+    warning(sprintf("Hoja '%s' no encontrada en %s.\nHojas disponibles: %s",
+                    nombre_hoja, ruta_xlsx, paste(hojas_disponibles, collapse = ", ")))
     return(NULL)
   }
   
   df <- read.xlsx(ruta_xlsx,
-                  sheet     = "Asignaciones_K_Optimo",
+                  sheet     = nombre_hoja,
                   startRow  = 2,          # fila 1 = título de agregar_hoja_formateada
                   colNames  = TRUE)
   
@@ -196,7 +197,8 @@ leer_asignaciones_xlsx <- function(ruta_xlsx, metodo) {
   df$Arbol   <- as.character(df$Arbol)
   df$Cluster <- as.factor(df$Cluster)
   
-  cat(sprintf("  [%s] %d árboles leídos desde %s\n", metodo, nrow(df), basename(ruta_xlsx)))
+  cat(sprintf("  [%s] %d árboles leídos desde %s (hoja: %s)\n",
+              metodo, nrow(df), basename(ruta_xlsx), nombre_hoja))
   
   return(df[, c("Arbol", "Cluster")])
 }
@@ -206,21 +208,27 @@ leer_asignaciones_xlsx <- function(ruta_xlsx, metodo) {
   # ==============================================================================
   #' Lee las asignaciones de K-Means, PAM y CLARA desde sus Excel respectivos
   #' y las une al dataframe de coordenadas por la columna "Arbol".
+  #' Además de las asignaciones del k óptimo, lee también hojas de k adicionales
+  #' (por defecto k=10 y k=15) cuando existen.
   #'
   #' @param coords_df   Dataframe con coordenadas (debe tener columna "Arbol")
   #' @param dir_results Directorio donde están los Excel de resultados (DIR_RESULTS)
   #' @param nombre_kmeans Nombre del archivo Excel de K-Means (default: "kmeans_resultados.xlsx")
   #' @param nombre_pam    Nombre del archivo Excel de PAM   (default: "pam_resultados.xlsx")
   #' @param nombre_clara  Nombre del archivo Excel de CLARA (default: "clara_resultados.xlsx")
-  #' @return Lista con dos elementos:
+  #' @param k_extra       Vector de k adicionales a leer (default: c(10, 15))
+  #' @return Lista con tres elementos:
   #'         $coords_df : dataframe enriquecido con columnas Cluster_KMeans, Cluster_PAM, Cluster_CLARA
+  #'                      y columnas adicionales como Cluster_KMeans_K10, Cluster_CLARA_K15, etc.
   #'         $k_optimos : named vector con el k usado por cada método (para subtítulos de gráficos)
+  #'         $k_extra   : vector de k adicionales efectivamente leídos
   
   unir_etiquetas_clustering <- function(coords_df,
                                         dir_results,
                                         nombre_kmeans = "kmeans_resultados.xlsx",
                                         nombre_pam    = "pam_resultados.xlsx",
-                                        nombre_clara  = "clara_resultados.xlsx") {
+                                        nombre_clara  = "clara_resultados.xlsx",
+                                        k_extra       = c(10, 15)) {
     
     cat("\n=== UNIENDO ETIQUETAS DE CLUSTERING ===\n")
     
@@ -229,10 +237,17 @@ leer_asignaciones_xlsx <- function(ruta_xlsx, metodo) {
       stop("coords_df debe contener una columna llamada 'Arbol'.")
     }
     
-    # Leer los tres métodos
-    kmeans_asig <- leer_asignaciones_xlsx(file.path(dir_results, nombre_kmeans), "K-Means")
-    pam_asig    <- leer_asignaciones_xlsx(file.path(dir_results, nombre_pam),    "PAM")
-    clara_asig  <- leer_asignaciones_xlsx(file.path(dir_results, nombre_clara),  "CLARA")
+    # --- Archivos de cada método ---
+    archivos_metodos <- list(
+      KMeans = file.path(dir_results, nombre_kmeans),
+      PAM    = file.path(dir_results, nombre_pam),
+      CLARA  = file.path(dir_results, nombre_clara)
+    )
+    
+    # --- Leer asignaciones K ÓPTIMO ---
+    kmeans_asig <- leer_asignaciones_xlsx(archivos_metodos[["KMeans"]], "K-Means")
+    pam_asig    <- leer_asignaciones_xlsx(archivos_metodos[["PAM"]],    "PAM")
+    clara_asig  <- leer_asignaciones_xlsx(archivos_metodos[["CLARA"]],  "CLARA")
     
     # Unir cada método renombrando la columna Cluster antes del merge
     if (!is.null(kmeans_asig)) {
@@ -257,10 +272,44 @@ leer_asignaciones_xlsx <- function(ruta_xlsx, metodo) {
       CLARA  = if (!is.null(clara_asig))  length(unique(clara_asig$Cluster_CLARA))   else NA
     )
     
+    # --- Leer asignaciones K EXTRA (k=10, k=15, etc.) ---
+    cat("\n--- Leyendo asignaciones para k extra:", paste(k_extra, collapse = ", "), "---\n")
+    
+    for (ke in k_extra) {
+      nombre_hoja_extra <- paste0("Asignaciones_K_", ke)
+      
+      # K-Means extra
+      km_extra <- leer_asignaciones_xlsx(archivos_metodos[["KMeans"]], "K-Means",
+                                          nombre_hoja = nombre_hoja_extra)
+      if (!is.null(km_extra)) {
+        col_name  <- paste0("Cluster_KMeans_K", ke)
+        km_extra  <- setNames(km_extra, c("Arbol", col_name))
+        coords_df <- merge(coords_df, km_extra, by = "Arbol", all.x = TRUE)
+      }
+      
+      # PAM extra
+      pam_extra <- leer_asignaciones_xlsx(archivos_metodos[["PAM"]], "PAM",
+                                           nombre_hoja = nombre_hoja_extra)
+      if (!is.null(pam_extra)) {
+        col_name  <- paste0("Cluster_PAM_K", ke)
+        pam_extra <- setNames(pam_extra, c("Arbol", col_name))
+        coords_df <- merge(coords_df, pam_extra, by = "Arbol", all.x = TRUE)
+      }
+      
+      # CLARA extra
+      cl_extra <- leer_asignaciones_xlsx(archivos_metodos[["CLARA"]], "CLARA",
+                                          nombre_hoja = nombre_hoja_extra)
+      if (!is.null(cl_extra)) {
+        col_name  <- paste0("Cluster_CLARA_K", ke)
+        cl_extra  <- setNames(cl_extra, c("Arbol", col_name))
+        coords_df <- merge(coords_df, cl_extra, by = "Arbol", all.x = TRUE)
+      }
+    }
+    
     cat("\nColumnas del dataframe enriquecido:\n")
     print(colnames(coords_df))
     cat("Primeras filas:\n")
     print(head(coords_df, 5))
     
-    return(list(coords_df = coords_df, k_optimos = k_optimos))
+    return(list(coords_df = coords_df, k_optimos = k_optimos, k_extra = k_extra))
   }

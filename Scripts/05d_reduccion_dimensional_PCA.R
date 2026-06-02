@@ -111,6 +111,7 @@ print(head(coords_df[, 1:3], 5))
 resultado    <- unir_etiquetas_clustering(coords_df, DIR_RESULTS)
 coords_df    <- resultado$coords_df
 k_optimos    <- resultado$k_optimos
+k_extra      <- resultado$k_extra
 
 # Extraer k por método para subtítulos
 k_km  <- ifelse(is.na(k_optimos["KMeans"]), "?", k_optimos["KMeans"])
@@ -131,7 +132,8 @@ graficar_clustering_pca <- function(df, col_cluster, titulo, subtitulo = "") {
   n_clusters <- length(unique(na.omit(df[[col_cluster]])))
   paleta <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00",
               "#A65628", "#F781BF", "#999999", "#66C2A5", "#FC8D62",
-              "#8DA0CB", "#E78AC3", "#A6D854", "#FFD92F", "#E5C494")
+              "#8DA0CB", "#E78AC3", "#A6D854", "#FFD92F", "#E5C494",
+              "#B3B3B3", "#1B9E77", "#D95F02", "#7570B3", "#E7298A")
   
   ggplot(df, aes(x = PC1, y = PC2, color = .data[[col_cluster]])) +
     geom_point(alpha = 0.6, size = 1.2) +
@@ -178,6 +180,47 @@ ggsave(ruta_grafico,
        height = 6,
        dpi    = 300)
 cat("Panel comparativo PCA guardado:", ruta_grafico, "\n")
+
+# =============================================================================
+# GRÁFICOS PCA — K EXTRA (k=10, k=15, etc.)
+# =============================================================================
+for (ke in k_extra) {
+  cat(sprintf("\n=== GENERANDO GRÁFICOS PCA (K = %d) ===\n", ke))
+  
+  col_km  <- paste0("Cluster_KMeans_K", ke)
+  col_pam <- paste0("Cluster_PAM_K",    ke)
+  col_cl  <- paste0("Cluster_CLARA_K",  ke)
+  
+  pe_kmeans <- graficar_clustering_pca(coords_df, col_km, "K-Means",
+                                        sprintf("k = %d  |  n = %d árboles  |  PC1+PC2 = %.1f%%", ke, nrow(coords_df), var_total_2d))
+  pe_pam    <- graficar_clustering_pca(coords_df, col_pam, "PAM (K-Medoids)",
+                                        sprintf("k = %d  |  n = %d árboles  |  PC1+PC2 = %.1f%%", ke, nrow(coords_df), var_total_2d))
+  pe_clara  <- graficar_clustering_pca(coords_df, col_cl, "CLARA",
+                                        sprintf("k = %d  |  n = %d árboles  |  PC1+PC2 = %.1f%%", ke, nrow(coords_df), var_total_2d))
+  
+  plots_extra <- Filter(Negate(is.null), list(pe_kmeans, pe_pam, pe_clara))
+  
+  if (length(plots_extra) > 0) {
+    panel_extra <- wrap_plots(plots_extra, ncol = min(length(plots_extra), 3)) +
+      plot_annotation(
+        title   = paste0("Comparación de Clustering (k=", ke, ") — PCA (", NOMBRE_BDD, ")"),
+        caption = paste0("Distancia Robinson-Foulds normalizada  |  prcomp(center=TRUE, scale=FALSE)"),
+        theme   = theme(
+          plot.title   = element_text(face = "bold", size = 14, hjust = 0.5),
+          plot.caption = element_text(color = "gray50", size = 8, hjust = 0.5)
+        )
+      )
+    
+    ruta_extra <- file.path(DIR_RESULTS,
+                             paste0("pca_comparativo_K", ke, "_", NOMBRE_BDD, ".png"))
+    ggsave(ruta_extra,
+           plot   = panel_extra,
+           width  = 7 * length(plots_extra),
+           height = 6,
+           dpi    = 300)
+    cat("Panel comparativo PCA k=", ke, " guardado:", ruta_extra, "\n")
+  }
+}
 
 # =============================================================================
 # SCREE PLOT — varianza explicada por componente

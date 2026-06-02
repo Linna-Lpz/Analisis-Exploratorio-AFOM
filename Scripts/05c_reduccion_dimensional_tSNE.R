@@ -6,6 +6,7 @@
 
 library(Rtsne)
 library(ggplot2)
+library(patchwork)
 library(openxlsx)
 
 source(here::here("Scripts", "config.R"))
@@ -96,9 +97,9 @@ cat(sprintf("Costo final  : %.6f\n", tail(tsne_resultado$itercosts, 1)))
 # CONSTRUIR DATAFRAME DE COORDENADAS
 # =============================================================================
 coords_df <- data.frame(
-  nombre_arbol = rownames(matriz_cuadrada),
-  tSNE_1       = tsne_resultado$Y[, 1],
-  tSNE_2       = tsne_resultado$Y[, 2],
+  Arbol  = rownames(matriz_cuadrada),
+  tSNE_1 = tsne_resultado$Y[, 1],
+  tSNE_2 = tsne_resultado$Y[, 2],
   stringsAsFactors = FALSE
 )
 
@@ -106,7 +107,48 @@ cat("\nPrimeras filas de coordenadas:\n")
 print(head(coords_df, 5))
 
 # =============================================================================
-# GRÁFICO PRINCIPAL — distribución de árboles
+# LEER Y UNIR ETIQUETAS DE CLUSTERING (k óptimo + k=10, k=15)
+# =============================================================================
+resultado    <- unir_etiquetas_clustering(coords_df, DIR_RESULTS)
+coords_df    <- resultado$coords_df
+k_optimos    <- resultado$k_optimos
+k_extra      <- resultado$k_extra
+
+k_km  <- ifelse(is.na(k_optimos["KMeans"]), "?", k_optimos["KMeans"])
+k_pam <- ifelse(is.na(k_optimos["PAM"]),    "?", k_optimos["PAM"])
+k_cl  <- ifelse(is.na(k_optimos["CLARA"]),  "?", k_optimos["CLARA"])
+
+# =============================================================================
+# FUNCIÓN PARA GRAFICAR CLUSTERING EN tSNE
+# =============================================================================
+graficar_clustering_tsne <- function(df, col_cluster, titulo, subtitulo = "") {
+  if (!col_cluster %in% colnames(df)) {
+    warning(sprintf("Columna '%s' no encontrada. Saltando gráfico.", col_cluster))
+    return(NULL)
+  }
+  n_clusters <- length(unique(na.omit(df[[col_cluster]])))
+  paleta <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00",
+              "#A65628", "#F781BF", "#999999", "#66C2A5", "#FC8D62",
+              "#8DA0CB", "#E78AC3", "#A6D854", "#FFD92F", "#E5C494",
+              "#B3B3B3", "#1B9E77", "#D95F02", "#7570B3", "#E7298A")
+  
+  ggplot(df, aes(x = tSNE_1, y = tSNE_2, color = .data[[col_cluster]])) +
+    geom_point(alpha = 0.6, size = 1.2) +
+    scale_color_manual(values = paleta[seq_len(n_clusters)],
+                       name = "Cluster", na.value = "grey80") +
+    labs(title = titulo, subtitle = subtitulo,
+         x = "t-SNE 1", y = "t-SNE 2") +
+    theme_minimal(base_size = 11) +
+    theme(
+      plot.title      = element_text(face = "bold", size = 12),
+      plot.subtitle   = element_text(color = "gray40", size = 9),
+      legend.position = "bottom"
+    ) +
+    guides(color = guide_legend(override.aes = list(size = 3, alpha = 1)))
+}
+
+# =============================================================================
+# GRÁFICO PRINCIPAL — distribución de árboles (sin clustering)
 # =============================================================================
 cat("\n=== GENERANDO GRÁFICOS ===\n")
 
@@ -143,6 +185,68 @@ p_tsne <- ggplot(coords_df, aes(x = tSNE_1, y = tSNE_2)) +
 ruta_grafico <- file.path(DIR_RESULTS, paste0("tsne_", NOMBRE_BDD, ".png"))
 ggsave(ruta_grafico, plot = p_tsne, width = 10, height = 7, dpi = 300)
 cat("Gráfico t-SNE guardado:", ruta_grafico, "\n")
+
+# =============================================================================
+# GRÁFICOS CLUSTERING — K ÓPTIMO
+# =============================================================================
+cat("\n=== GRÁFICOS CLUSTERING tSNE (K ÓPTIMO) ===\n")
+
+p_km <- graficar_clustering_tsne(coords_df, "Cluster_KMeans", "K-Means",
+                                  sprintf("k = %s  |  n = %d árboles", k_km, nrow(coords_df)))
+p_pa <- graficar_clustering_tsne(coords_df, "Cluster_PAM", "PAM (K-Medoids)",
+                                  sprintf("k = %s  |  n = %d árboles", k_pam, nrow(coords_df)))
+p_cl <- graficar_clustering_tsne(coords_df, "Cluster_CLARA", "CLARA",
+                                  sprintf("k = %s  |  n = %d árboles", k_cl, nrow(coords_df)))
+
+plots_disp <- Filter(Negate(is.null), list(p_km, p_pa, p_cl))
+if (length(plots_disp) > 0) {
+  panel <- wrap_plots(plots_disp, ncol = min(length(plots_disp), 3)) +
+    plot_annotation(
+      title   = paste0("Comparación de Clustering — t-SNE (", NOMBRE_BDD, ")"),
+      caption = paste0("Distancia RF normalizada  |  Rtsne  |  perplexity=", PERPLEXITY),
+      theme   = theme(
+        plot.title   = element_text(face = "bold", size = 14, hjust = 0.5),
+        plot.caption = element_text(color = "gray50", size = 8, hjust = 0.5)
+      )
+    )
+  ruta_panel <- file.path(DIR_RESULTS, paste0("tsne_comparativo_clustering_", NOMBRE_BDD, ".png"))
+  ggsave(ruta_panel, plot = panel, width = 7 * length(plots_disp), height = 6, dpi = 300)
+  cat("Panel comparativo guardado:", ruta_panel, "\n")
+}
+
+# =============================================================================
+# GRÁFICOS CLUSTERING — K EXTRA (k=10, k=15, etc.)
+# =============================================================================
+for (ke in k_extra) {
+  cat(sprintf("\n=== GRÁFICOS tSNE (K = %d) ===\n", ke))
+  
+  col_km  <- paste0("Cluster_KMeans_K", ke)
+  col_pam <- paste0("Cluster_PAM_K",    ke)
+  col_cl  <- paste0("Cluster_CLARA_K",  ke)
+  
+  pe_km <- graficar_clustering_tsne(coords_df, col_km, "K-Means",
+                                     sprintf("k = %d  |  n = %d árboles", ke, nrow(coords_df)))
+  pe_pa <- graficar_clustering_tsne(coords_df, col_pam, "PAM (K-Medoids)",
+                                     sprintf("k = %d  |  n = %d árboles", ke, nrow(coords_df)))
+  pe_cl <- graficar_clustering_tsne(coords_df, col_cl, "CLARA",
+                                     sprintf("k = %d  |  n = %d árboles", ke, nrow(coords_df)))
+  
+  plots_extra <- Filter(Negate(is.null), list(pe_km, pe_pa, pe_cl))
+  if (length(plots_extra) > 0) {
+    panel_extra <- wrap_plots(plots_extra, ncol = min(length(plots_extra), 3)) +
+      plot_annotation(
+        title   = paste0("Comparación de Clustering (k=", ke, ") — t-SNE (", NOMBRE_BDD, ")"),
+        caption = paste0("Distancia RF normalizada  |  Rtsne  |  perplexity=", PERPLEXITY),
+        theme   = theme(
+          plot.title   = element_text(face = "bold", size = 14, hjust = 0.5),
+          plot.caption = element_text(color = "gray50", size = 8, hjust = 0.5)
+        )
+      )
+    ruta_extra <- file.path(DIR_RESULTS, paste0("tsne_comparativo_K", ke, "_", NOMBRE_BDD, ".png"))
+    ggsave(ruta_extra, plot = panel_extra, width = 7 * length(plots_extra), height = 6, dpi = 300)
+    cat("Panel comparativo tSNE k=", ke, " guardado:", ruta_extra, "\n")
+  }
+}
 
 # =============================================================================
 # GRÁFICO DE CONVERGENCIA — evolución del costo KL por iteración
@@ -199,9 +303,9 @@ colnames(convergencia_export_df) <- c("Iteracion", "Costo_KL")
 wb <- createWorkbook()
 
 agregar_hoja_formateada(wb, "Coordenadas_tSNE",
-                        paste0("Coordenadas t-SNE — ", NOMBRE_BDD),
+                        paste0("Coordenadas t-SNE + Etiquetas de Clustering — ", NOMBRE_BDD),
                         coords_df,
-                        anchos_col = c(40, 18, 18))
+                        anchos_col = "auto")
 
 agregar_hoja_formateada(wb, "Diagnostico",
                         "Diagnóstico y Parámetros t-SNE",

@@ -86,6 +86,7 @@ coords_df <- data.frame(
 resultado    <- unir_etiquetas_clustering(coords_df, DIR_RESULTS)
 coords_df    <- resultado$coords_df
 k_optimos    <- resultado$k_optimos
+k_extra      <- resultado$k_extra
 
 # Extraer k por método para subtítulos
 k_km  <- ifelse(is.na(k_optimos["KMeans"]), "?", k_optimos["KMeans"])
@@ -105,10 +106,11 @@ graficar_clustering <- function(df, col_cluster, titulo, subtitulo = "") {
   
   n_clusters <- length(unique(na.omit(df[[col_cluster]])))
   
-  # Paleta de colores discreta — hasta 15 clusters
+  # Paleta de colores discreta — hasta 20 clusters
   paleta <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00",
               "#A65628", "#F781BF", "#999999", "#66C2A5", "#FC8D62",
-              "#8DA0CB", "#E78AC3", "#A6D854", "#FFD92F", "#E5C494")
+              "#8DA0CB", "#E78AC3", "#A6D854", "#FFD92F", "#E5C494",
+              "#B3B3B3", "#1B9E77", "#D95F02", "#7570B3", "#E7298A")
   
   ggplot(df, aes(x = UMAP_1, y = UMAP_2, color = .data[[col_cluster]])) +
     geom_point(alpha = 0.6, size = 1.2) +
@@ -137,12 +139,7 @@ graficar_clustering <- function(df, col_cluster, titulo, subtitulo = "") {
 # =============================================================================
 # GENERAR GRÁFICOS INDIVIDUALES
 # =============================================================================
-cat("\n=== GENERANDO GRÁFICOS ===\n")
-
-# Recuperar k óptimo de cada método para el subtítulo
-k_km  <- if (!is.null(kmeans_asig)) length(unique(kmeans_asig$Cluster)) else "?"
-k_pam <- if (!is.null(pam_asig))    length(unique(pam_asig$Cluster))    else "?"
-k_cl  <- if (!is.null(clara_asig))  length(unique(clara_asig$Cluster))  else "?"
+cat("\n=== GENERANDO GRÁFICOS (K ÓPTIMO) ===\n")
 
 p_kmeans <- graficar_clustering(
   df          = coords_df,
@@ -206,6 +203,62 @@ for (g in graficos_individuales) {
     ruta_g <- file.path(DIR_RESULTS, paste0(g$nombre, "_", NOMBRE_BDD, ".png"))
     ggsave(ruta_g, plot = g$plot, width = 8, height = 6, dpi = 300)
     cat("Gráfico guardado:", ruta_g, "\n")
+  }
+}
+
+# =============================================================================
+# GENERAR GRÁFICOS — K EXTRA (k=10, k=15, etc.)
+# =============================================================================
+for (ke in k_extra) {
+  cat(sprintf("\n=== GENERANDO GRÁFICOS (K = %d) ===\n", ke))
+  
+  col_km  <- paste0("Cluster_KMeans_K", ke)
+  col_pam <- paste0("Cluster_PAM_K",    ke)
+  col_cl  <- paste0("Cluster_CLARA_K",  ke)
+  
+  pe_kmeans <- graficar_clustering(coords_df, col_km, "K-Means",
+                                    sprintf("k = %d  |  n = %d árboles", ke, nrow(coords_df)))
+  pe_pam    <- graficar_clustering(coords_df, col_pam, "PAM (K-Medoids)",
+                                    sprintf("k = %d  |  n = %d árboles", ke, nrow(coords_df)))
+  pe_clara  <- graficar_clustering(coords_df, col_cl, "CLARA",
+                                    sprintf("k = %d  |  n = %d árboles", ke, nrow(coords_df)))
+  
+  plots_extra <- Filter(Negate(is.null), list(pe_kmeans, pe_pam, pe_clara))
+  
+  if (length(plots_extra) > 0) {
+    panel_extra <- wrap_plots(plots_extra, ncol = min(length(plots_extra), 3)) +
+      plot_annotation(
+        title   = paste0("Comparación de Clustering (k=", ke, ") — UMAP (", NOMBRE_BDD, ")"),
+        caption = paste0("Distancia Robinson-Foulds normalizada  |  ",
+                         "UMAP: n_neighbors=", N_NEIGHBORS, ", min_dist=", MIN_DIST),
+        theme   = theme(
+          plot.title   = element_text(face = "bold", size = 14, hjust = 0.5),
+          plot.caption = element_text(color = "gray50", size = 8, hjust = 0.5)
+        )
+      )
+    
+    ruta_panel_extra <- file.path(DIR_RESULTS,
+                                   paste0("umap_comparativo_K", ke, "_", NOMBRE_BDD, ".png"))
+    ggsave(ruta_panel_extra,
+           plot   = panel_extra,
+           width  = 7 * min(length(plots_extra), 3),
+           height = 6,
+           dpi    = 300)
+    cat("Panel comparativo k=", ke, " guardado:", ruta_panel_extra, "\n")
+  }
+  
+  # Gráficos individuales para este k
+  graficos_k <- list(
+    list(plot = pe_kmeans, nombre = paste0("umap_kmeans_K", ke)),
+    list(plot = pe_pam,    nombre = paste0("umap_pam_K",    ke)),
+    list(plot = pe_clara,  nombre = paste0("umap_clara_K",  ke))
+  )
+  for (g in graficos_k) {
+    if (!is.null(g$plot)) {
+      ruta_g <- file.path(DIR_RESULTS, paste0(g$nombre, "_", NOMBRE_BDD, ".png"))
+      ggsave(ruta_g, plot = g$plot, width = 8, height = 6, dpi = 300)
+      cat("Gráfico guardado:", ruta_g, "\n")
+    }
   }
 }
 
