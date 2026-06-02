@@ -143,6 +143,54 @@ cat("\nMedoides (árboles representativos por cluster):\n")
 print(medoides_df)
 
 # =============================================================================
+# ASIGNACIONES ADICIONALES PARA k = 10 Y k = 15
+# =============================================================================
+k_extra <- c(10, 15)
+asignaciones_extra <- list()
+medoides_extra     <- list()
+
+for (ke in k_extra) {
+  cat(sprintf("Generando asignaciones CLARA para k = %d...\n", ke))
+  set.seed(2)
+  clara_extra <- clara(
+    x         = matriz_cuadrada,
+    k         = ke,
+    metric    = "euclidean",
+    samples   = 50,
+    sampsize  = min(n, 40 + 2 * ke),
+    keep.data = FALSE,
+    rngR      = TRUE
+  )
+
+  asig_extra <- data.frame(
+    Arbol   = rownames(matriz_cuadrada),
+    Cluster = clara_extra$clustering,
+    Medoide = rownames(clara_extra$medoids)[clara_extra$clustering]
+  )
+
+  # Agregar columna con tamaño de cada cluster para facilitar revisión
+  tamanos <- as.integer(table(clara_extra$clustering))
+  asig_extra$Tamano_Cluster <- tamanos[asig_extra$Cluster]
+
+  asignaciones_extra[[as.character(ke)]] <- asig_extra
+
+  # Tabla de medoides para este k
+  medoides_extra[[as.character(ke)]] <- data.frame(
+    Cluster  = seq_len(ke),
+    Medoide  = rownames(clara_extra$medoids),
+    Tamano   = tamanos,
+    Silhouette_Cluster = round(
+      tapply(clara_extra$silinfo$widths[, "sil_width"],
+             clara_extra$silinfo$widths[, "cluster"],
+             mean), 3
+    )
+  )
+
+  cat(sprintf("  k=%d — Tamaños de clusters: min=%d, max=%d\n",
+              ke, min(tamanos), max(tamanos)))
+}
+
+# =============================================================================
 # TABLA COMPARATIVA K-MEANS vs PAM vs CLARA
 # =============================================================================
 # Leer resultados previos si existen
@@ -224,6 +272,27 @@ wb <- agregar_hoja_formateada(wb           = wb,
                               titulo_tabla = paste0("Medoides por Cluster — K óptimo = ", k_optimo),
                               datos        = medoides_df,
                               anchos_col   = "auto")
+
+# Hojas adicionales para k = 10 y k = 15
+for (ke in k_extra) {
+  # Hoja de asignaciones
+  nombre_asig <- paste0("Asignaciones_K_", ke)
+  titulo_asig <- paste0("Asignaciones de Árboles — K = ", ke)
+  wb <- agregar_hoja_formateada(wb           = wb,
+                                nombre_hoja  = nombre_asig,
+                                titulo_tabla = titulo_asig,
+                                datos        = asignaciones_extra[[as.character(ke)]],
+                                anchos_col   = "auto")
+
+  # Hoja de medoides
+  nombre_med <- paste0("Medoides_K_", ke)
+  titulo_med <- paste0("Medoides por Cluster — K = ", ke)
+  wb <- agregar_hoja_formateada(wb           = wb,
+                                nombre_hoja  = nombre_med,
+                                titulo_tabla = titulo_med,
+                                datos        = medoides_extra[[as.character(ke)]],
+                                anchos_col   = "auto")
+}
 
 # Hoja comparativa si está disponible
 if (comparativa_disponible) {

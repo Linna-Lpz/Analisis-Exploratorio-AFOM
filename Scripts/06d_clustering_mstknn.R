@@ -149,15 +149,12 @@ guardar_red_png <- function(mst_resultado, ruta_png, titulo) {
 set.seed(2)
 
 escenarios <- list(
-  list(nombre      = "Auto (sin suggested.k)",
-       nombre_corto = "auto",
-       suggested_k = NULL),
-  list(nombre      = "suggested.k = 3",
-       nombre_corto = "k3",
-       suggested_k = 3),
-  list(nombre      = "suggested.k = 5",
-       nombre_corto = "k5",
-       suggested_k = 5)
+  list(nombre      = "suggested.k = 7",
+       nombre_corto = "k7",
+       suggested_k = 7),
+  list(nombre      = "suggested.k = 10",
+       nombre_corto = "k10",
+       suggested_k = 10)
 )
 
 `%||%` <- function(a, b) if (!is.null(a)) a else b
@@ -299,70 +296,6 @@ cat("\nDistribución de árboles por cluster (mejor escenario):\n")
 print(tamanos_df)
 
 # =============================================================================
-# 7. COMPARATIVA CON MÉTODOS ANTERIORES
-# =============================================================================
-cat("\nCargando resultados de métodos anteriores...\n")
-
-ruta_kmeans <- file.path(DIR_RESULTS, "kmeans_resultados.xlsx")
-ruta_pam    <- file.path(DIR_RESULTS, "pam_resultados.xlsx")
-ruta_clara  <- file.path(DIR_RESULTS, "clara_resultados.xlsx")
-
-archivos_previos <- c(ruta_kmeans, ruta_pam, ruta_clara)
-nombres_previos  <- c("K-Means", "PAM", "CLARA")
-
-resumen_comparativo <- data.frame()
-
-for (j in seq_along(archivos_previos)) {
-  if (file.exists(archivos_previos[j])) {
-    
-    df <- tryCatch(
-      read.xlsx(archivos_previos[j], sheet = "Calidad_Clusters", startRow = 2),
-      error = function(e) {
-        cat(sprintf("  ERROR leyendo %s: %s\n", basename(archivos_previos[j]), e$message))
-        NULL
-      }
-    )
-    
-    if (is.null(df) || nrow(df) == 0) next
-    
-    df$Silhouette <- as.numeric(df$Silhouette)
-    df$k          <- as.integer(df$k)
-    idx           <- which.max(df$Silhouette)
-    
-    resumen_comparativo <- rbind(resumen_comparativo, data.frame(
-      Metodo              = nombres_previos[j],
-      K_Optimo            = df$k[idx],
-      Dunn_Optimo         = as.numeric(df$Dunn[idx]),
-      Connectivity_Optimo = as.numeric(df$Connectivity[idx]),
-      Silhouette_Optimo   = df$Silhouette[idx]
-    ))
-    
-    cat(sprintf("  [OK] %s — k óptimo: %d | Silhouette: %.3f\n",
-                nombres_previos[j], df$k[idx], df$Silhouette[idx]))
-    
-  } else {
-    cat(sprintf("  [OMITIDO] No se encontró: %s\n", basename(archivos_previos[j])))
-  }
-}
-
-# Agregar MST-kNN al resumen comparativo
-if (nrow(calidad_valida) > 0) {
-  mejor_cal <- calidad_valida[idx_mejor, ]
-  resumen_comparativo <- rbind(resumen_comparativo, data.frame(
-    Metodo              = paste0("MST-kNN (", mejor_nombre, ")"),
-    K_Optimo            = mejor_cal$k_encontrado,
-    Dunn_Optimo         = mejor_cal$Dunn,
-    Connectivity_Optimo = mejor_cal$Connectivity,
-    Silhouette_Optimo   = mejor_cal$Silhouette
-  ))
-}
-
-if (nrow(resumen_comparativo) > 0) {
-  cat("\nResumen comparativo final:\n")
-  print(resumen_comparativo)
-}
-
-# =============================================================================
 # 9. REPORTE EXCEL
 # =============================================================================
 cat("Generando reporte Excel...\n")
@@ -415,15 +348,6 @@ if (!is.null(excluidos_df)) {
                                 anchos_col   = "auto")
 }
 
-# Hoja 6: Comparativa final (si hay datos previos)
-if (nrow(resumen_comparativo) > 0) {
-  wb <- agregar_hoja_formateada(wb           = wb,
-                                nombre_hoja  = "Comparativa_Final",
-                                titulo_tabla = "Comparativa Final: K-Means vs PAM vs CLARA vs MST-kNN",
-                                datos        = resumen_comparativo,
-                                anchos_col   = "auto")
-}
-
 # Hoja 7: Índice de redes PNG generadas
 if (length(resultados_escenarios) > 0) {
   redes_generadas_df <- do.call(rbind, lapply(names(resultados_escenarios), function(nm) {
@@ -443,7 +367,7 @@ if (length(resultados_escenarios) > 0) {
   cat("AVISO: No se generaron redes PNG (todos los escenarios fallaron).\n")
 }
 
-ruta_excel <- file.path(DIR_RESULTS, "mstknn_resultados.xlsx")
+ruta_excel <- file.path(DIR_RESULTS, "mstknn_resultados2.xlsx")
 saveWorkbook(wb, ruta_excel, overwrite = TRUE)
 
 cat("Resultados completos guardados en:", ruta_excel, "\n")

@@ -91,6 +91,37 @@ saveRDS(asignaciones_df,   file = file.path(DIR_CACHE, "kmeans_asignaciones.rds"
 saveRDS(clusters_optimos,  file = file.path(DIR_CACHE, "kmeans_modelo_optimo.rds"))
 
 # =============================================================================
+# ASIGNACIONES ADICIONALES PARA k = 10 Y k = 15
+# =============================================================================
+k_extra <- c(10, 15)
+asignaciones_extra <- list()
+
+for (ke in k_extra) {
+  cat(sprintf("Generando asignaciones para k = %d...\n", ke))
+  set.seed(2)
+  cl_extra <- kmeans(matriz_cuadrada, centers = ke, nstart = 25)
+
+  asig_extra <- data.frame(
+    Arbol   = rownames(matriz_cuadrada),
+    Cluster = cl_extra$cluster
+  )
+
+  # Agregar columna con tamaño de cada cluster para facilitar revisión
+  tamanos <- as.integer(table(cl_extra$cluster))
+  asig_extra$Tamano_Cluster <- tamanos[asig_extra$Cluster]
+
+  asignaciones_extra[[as.character(ke)]] <- asig_extra
+
+  # Resumen de tamaños por cluster
+  resumen_k <- data.frame(
+    Cluster = seq_len(ke),
+    Tamano  = tamanos
+  )
+  cat(sprintf("  k=%d — Tamaños de clusters: min=%d, max=%d\n",
+              ke, min(tamanos), max(tamanos)))
+}
+
+# =============================================================================
 # EXCEL CON TIEMPOS + RESULTADOS
 # =============================================================================
 t_kmeans <- as.numeric(tiempo_kmeans)
@@ -121,6 +152,17 @@ wb <- agregar_hoja_formateada(wb           = wb,
                               titulo_tabla = paste0("Asignaciones — K óptimo = ", k_optimo),
                               datos        = asignaciones_df,
                               anchos_col   = "auto")
+
+# Hojas adicionales para k = 10 y k = 15
+for (ke in k_extra) {
+  nombre_hoja <- paste0("Asignaciones_K_", ke)
+  titulo      <- paste0("Asignaciones — K = ", ke)
+  wb <- agregar_hoja_formateada(wb           = wb,
+                                nombre_hoja  = nombre_hoja,
+                                titulo_tabla = titulo,
+                                datos        = asignaciones_extra[[as.character(ke)]],
+                                anchos_col   = "auto")
+}
 
 ruta_excel <- file.path(DIR_RESULTS, "kmeans_resultados.xlsx")
 saveWorkbook(wb, ruta_excel, overwrite = TRUE)
