@@ -108,12 +108,11 @@ print(head(coords_df[, 1:3], 5))
 # =============================================================================
 # LEER Y UNIR ETIQUETAS DE CLUSTERING
 # =============================================================================
-resultado    <- unir_etiquetas_clustering(coords_df, DIR_RESULTS)
-coords_df    <- resultado$coords_df
-k_optimos    <- resultado$k_optimos
-k_extra      <- resultado$k_extra
+resultado  <- unir_etiquetas_clustering(coords_df, DIR_RESULTS)
+coords_df  <- resultado$coords_df
+k_optimos  <- resultado$k_optimos
+k_extra    <- resultado$k_extra
 
-# Extraer k por método para subtítulos
 k_km  <- ifelse(is.na(k_optimos["KMeans"]), "?", k_optimos["KMeans"])
 k_pam <- ifelse(is.na(k_optimos["PAM"]),    "?", k_optimos["PAM"])
 k_cl  <- ifelse(is.na(k_optimos["CLARA"]),  "?", k_optimos["CLARA"])
@@ -284,6 +283,110 @@ ggsave(ruta_scree, plot = p_scree, width = 10, height = 6, dpi = 300)
 cat("Scree plot guardado:", ruta_scree, "\n")
 
 # =============================================================================
+# GRÁFICO PCA — KMEANS SUBDIVISIÓN ITERATIVA
+# =============================================================================
+if ("Cluster_KMEANS_Iter" %in% colnames(coords_df)) {
+  
+  n_iter <- length(unique(na.omit(coords_df$Cluster_KMEANS_Iter)))
+  cat(sprintf("\n=== GENERANDO GRÁFICO KMEANS ITERATIVA (k=%d) ===\n", n_iter))
+  
+  # Paleta ampliada — hcl.colors para k grande
+  paleta_iter <- if (n_iter <= 20) {
+    c("#E41A1C","#377EB8","#4DAF4A","#984EA3","#FF7F00",
+      "#A65628","#F781BF","#999999","#66C2A5","#FC8D62",
+      "#8DA0CB","#E78AC3","#A6D854","#FFD92F","#E5C494",
+      "#B3B3B3","#1B9E77","#D95F02","#7570B3","#E7298A")[seq_len(n_iter)]
+  } else {
+    hcl.colors(n_iter, palette = "Dynamic")
+  }
+  
+  p_iter <- ggplot(coords_df,
+                   aes(x = PC1, y = PC2, color = Cluster_KMEANS_Iter)) +
+    geom_point(alpha = 0.6, size = 1.2) +
+    scale_color_manual(values = paleta_iter,
+                       name   = "Cluster",
+                       na.value = "grey80") +
+    labs(
+      title    = "KMEANS — Subdivisión Iterativa",
+      subtitle = sprintf("k = %d  |  n = %d árboles  |  PC1+PC2 = %.1f%%",
+                         n_iter, nrow(coords_df), var_total_2d),
+      x        = paste0("PC1 (", var_pc1, "%)"),
+      y        = paste0("PC2 (", var_pc2, "%)")
+    ) +
+    theme_minimal(base_size = 11) +
+    theme(
+      plot.title      = element_text(face = "bold", size = 12),
+      plot.subtitle   = element_text(color = "gray40", size = 9),
+      # ocultar leyenda si hay muchos clusters — satura el gráfico
+      legend.position = if (n_iter > 15) "none" else "bottom"
+    ) +
+    guides(color = guide_legend(
+      override.aes = list(size = 3, alpha = 1),
+      ncol = 5   # leyenda en 5 columnas si se muestra
+    ))
+  
+  ruta_iter <- file.path(DIR_RESULTS,
+                         paste0("pca_kmeans_iterativa_", NOMBRE_BDD, ".png"))
+  ggsave(ruta_iter, plot = p_iter, width = 9, height = 7, dpi = 300)
+  cat("Gráfico KMEANS iterativa guardado:", ruta_iter, "\n")
+  
+} else {
+  cat("Columna 'Cluster_KMEANS_Iter' no encontrada. Saltando gráfico iterativo.\n")
+}
+
+# =============================================================================
+# GRÁFICO PCA — CLARA SUBDIVISIÓN ITERATIVA
+# =============================================================================
+if ("Cluster_CLARA_Iter" %in% colnames(coords_df)) {
+  
+  n_iter <- length(unique(na.omit(coords_df$Cluster_CLARA_Iter)))
+  cat(sprintf("\n=== GENERANDO GRÁFICO CLARA ITERATIVA (k=%d) ===\n", n_iter))
+  
+  # Paleta ampliada — hcl.colors para k grande
+  paleta_iter <- if (n_iter <= 20) {
+    c("#E41A1C","#377EB8","#4DAF4A","#984EA3","#FF7F00",
+      "#A65628","#F781BF","#999999","#66C2A5","#FC8D62",
+      "#8DA0CB","#E78AC3","#A6D854","#FFD92F","#E5C494",
+      "#B3B3B3","#1B9E77","#D95F02","#7570B3","#E7298A")[seq_len(n_iter)]
+  } else {
+    hcl.colors(n_iter, palette = "Dynamic")
+  }
+  
+  p_iter <- ggplot(coords_df,
+                   aes(x = PC1, y = PC2, color = Cluster_CLARA_Iter)) +
+    geom_point(alpha = 0.6, size = 1.2) +
+    scale_color_manual(values = paleta_iter,
+                       name   = "Cluster",
+                       na.value = "grey80") +
+    labs(
+      title    = "CLARA — Subdivisión Iterativa",
+      subtitle = sprintf("k = %d  |  n = %d árboles  |  PC1+PC2 = %.1f%%",
+                         n_iter, nrow(coords_df), var_total_2d),
+      x        = paste0("PC1 (", var_pc1, "%)"),
+      y        = paste0("PC2 (", var_pc2, "%)")
+    ) +
+    theme_minimal(base_size = 11) +
+    theme(
+      plot.title      = element_text(face = "bold", size = 12),
+      plot.subtitle   = element_text(color = "gray40", size = 9),
+      # ocultar leyenda si hay muchos clusters — satura el gráfico
+      legend.position = if (n_iter > 15) "none" else "bottom"
+    ) +
+    guides(color = guide_legend(
+      override.aes = list(size = 3, alpha = 1),
+      ncol = 5   # leyenda en 5 columnas si se muestra
+    ))
+  
+  ruta_iter <- file.path(DIR_RESULTS,
+                         paste0("pca_clara_iterativa_", NOMBRE_BDD, ".png"))
+  ggsave(ruta_iter, plot = p_iter, width = 9, height = 7, dpi = 300)
+  cat("Gráfico CLARA iterativa guardado:", ruta_iter, "\n")
+  
+} else {
+  cat("Columna 'Cluster_CLARA_Iter' no encontrada. Saltando gráfico iterativo.\n")
+}
+
+# =============================================================================
 # EXPORTAR COORDENADAS Y DIAGNÓSTICO A EXCEL
 # =============================================================================
 cat("\n=== EXPORTANDO RESULTADOS ===\n")
@@ -314,7 +417,9 @@ parametros_df <- data.frame(
 )
 
 # Anchos dinámicos para coordenadas según n_comp_real
-anchos_coords <- c(40, rep(16, n_comp_real))
+anchos_coords <- c(40,                          # columna Arbol
+                   rep(16, n_comp_real),         # columnas PC1..PC10
+                   rep(14, ncol(coords_df) - 1 - n_comp_real))  # columnas de clustering
 
 wb <- createWorkbook()
 

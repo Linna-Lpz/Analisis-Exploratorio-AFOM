@@ -223,93 +223,131 @@ leer_asignaciones_xlsx <- function(ruta_xlsx, metodo,
   #'         $k_optimos : named vector con el k usado por cada método (para subtítulos de gráficos)
   #'         $k_extra   : vector de k adicionales efectivamente leídos
   
-  unir_etiquetas_clustering <- function(coords_df,
-                                        dir_results,
-                                        nombre_kmeans = "kmeans_resultados.xlsx",
-                                        nombre_pam    = "pam_resultados.xlsx",
-                                        nombre_clara  = "clara_resultados.xlsx",
-                                        k_extra       = c(10, 15)) {
-    
-    cat("\n=== UNIENDO ETIQUETAS DE CLUSTERING ===\n")
-    
-    # Verificar que coords_df tiene la columna requerida
-    if (!"Arbol" %in% colnames(coords_df)) {
-      stop("coords_df debe contener una columna llamada 'Arbol'.")
-    }
-    
-    # --- Archivos de cada método ---
-    archivos_metodos <- list(
-      KMeans = file.path(dir_results, nombre_kmeans),
-      PAM    = file.path(dir_results, nombre_pam),
-      CLARA  = file.path(dir_results, nombre_clara)
-    )
-    
-    # --- Leer asignaciones K ÓPTIMO ---
-    kmeans_asig <- leer_asignaciones_xlsx(archivos_metodos[["KMeans"]], "K-Means")
-    pam_asig    <- leer_asignaciones_xlsx(archivos_metodos[["PAM"]],    "PAM")
-    clara_asig  <- leer_asignaciones_xlsx(archivos_metodos[["CLARA"]],  "CLARA")
-    
-    # Unir cada método renombrando la columna Cluster antes del merge
-    if (!is.null(kmeans_asig)) {
-      kmeans_asig <- setNames(kmeans_asig, c("Arbol", "Cluster_KMeans"))
-      coords_df   <- merge(coords_df, kmeans_asig, by = "Arbol", all.x = TRUE)
-    }
-    
-    if (!is.null(pam_asig)) {
-      pam_asig  <- setNames(pam_asig, c("Arbol", "Cluster_PAM"))
-      coords_df <- merge(coords_df, pam_asig, by = "Arbol", all.x = TRUE)
-    }
-    
-    if (!is.null(clara_asig)) {
-      clara_asig <- setNames(clara_asig, c("Arbol", "Cluster_CLARA"))
-      coords_df  <- merge(coords_df, clara_asig, by = "Arbol", all.x = TRUE)
-    }
-    
-    # Vector de k óptimos para usar en subtítulos de gráficos
-    k_optimos <- c(
-      KMeans = if (!is.null(kmeans_asig)) length(unique(kmeans_asig$Cluster_KMeans)) else NA,
-      PAM    = if (!is.null(pam_asig))    length(unique(pam_asig$Cluster_PAM))       else NA,
-      CLARA  = if (!is.null(clara_asig))  length(unique(clara_asig$Cluster_CLARA))   else NA
-    )
-    
-    # --- Leer asignaciones K EXTRA (k=10, k=15, etc.) ---
+unir_etiquetas_clustering <- function(coords_df,
+                                      dir_results,
+                                      nombre_kmeans = "kmeans_subdivision_iterativa.xlsx",
+                                      nombre_pam    = "pam_resultados_iterativa.xlsx",
+                                      nombre_clara  = "clara_subdivision_iterativa.xlsx",
+                                      k_extra       = c(10, 15)) {
+  
+  cat("\n=== UNIENDO ETIQUETAS DE CLUSTERING ===\n")
+  
+  if (!"Arbol" %in% colnames(coords_df))
+    stop("coords_df debe contener una columna llamada 'Arbol'.")
+  
+  archivos_metodos <- list(
+    KMeans = file.path(dir_results, nombre_kmeans),
+    PAM    = file.path(dir_results, nombre_pam),
+    CLARA  = file.path(dir_results, nombre_clara)
+  )
+  
+  # --- K ÓPTIMO ---
+  kmeans_asig <- leer_asignaciones_xlsx(archivos_metodos[["KMeans"]], "K-Means")
+  pam_asig    <- leer_asignaciones_xlsx(archivos_metodos[["PAM"]],    "PAM")
+  clara_asig  <- leer_asignaciones_xlsx(archivos_metodos[["CLARA"]],  "CLARA")
+  
+  if (!is.null(kmeans_asig)) {
+    coords_df <- merge(coords_df, setNames(kmeans_asig, c("Arbol", "Cluster_KMeans")),
+                       by = "Arbol", all.x = TRUE)
+  }
+  if (!is.null(pam_asig)) {
+    coords_df <- merge(coords_df, setNames(pam_asig, c("Arbol", "Cluster_PAM")),
+                       by = "Arbol", all.x = TRUE)
+  }
+  if (!is.null(clara_asig)) {
+    coords_df <- merge(coords_df, setNames(clara_asig, c("Arbol", "Cluster_CLARA")),
+                       by = "Arbol", all.x = TRUE)
+  }
+  
+  # --- K EXTRA ---
+  if (length(k_extra) > 0) {
     cat("\n--- Leyendo asignaciones para k extra:", paste(k_extra, collapse = ", "), "---\n")
     
     for (ke in k_extra) {
       nombre_hoja_extra <- paste0("Asignaciones_K_", ke)
       
-      # K-Means extra
       km_extra <- leer_asignaciones_xlsx(archivos_metodos[["KMeans"]], "K-Means",
-                                          nombre_hoja = nombre_hoja_extra)
+                                         nombre_hoja = nombre_hoja_extra)
       if (!is.null(km_extra)) {
-        col_name  <- paste0("Cluster_KMeans_K", ke)
-        km_extra  <- setNames(km_extra, c("Arbol", col_name))
-        coords_df <- merge(coords_df, km_extra, by = "Arbol", all.x = TRUE)
+        coords_df <- merge(coords_df,
+                           setNames(km_extra, c("Arbol", paste0("Cluster_KMeans_K", ke))),
+                           by = "Arbol", all.x = TRUE)
       }
       
-      # PAM extra
       pam_extra <- leer_asignaciones_xlsx(archivos_metodos[["PAM"]], "PAM",
-                                           nombre_hoja = nombre_hoja_extra)
+                                          nombre_hoja = nombre_hoja_extra)
       if (!is.null(pam_extra)) {
-        col_name  <- paste0("Cluster_PAM_K", ke)
-        pam_extra <- setNames(pam_extra, c("Arbol", col_name))
-        coords_df <- merge(coords_df, pam_extra, by = "Arbol", all.x = TRUE)
+        coords_df <- merge(coords_df,
+                           setNames(pam_extra, c("Arbol", paste0("Cluster_PAM_K", ke))),
+                           by = "Arbol", all.x = TRUE)
       }
       
-      # CLARA extra
       cl_extra <- leer_asignaciones_xlsx(archivos_metodos[["CLARA"]], "CLARA",
-                                          nombre_hoja = nombre_hoja_extra)
+                                         nombre_hoja = nombre_hoja_extra)
       if (!is.null(cl_extra)) {
-        col_name  <- paste0("Cluster_CLARA_K", ke)
-        cl_extra  <- setNames(cl_extra, c("Arbol", col_name))
-        coords_df <- merge(coords_df, cl_extra, by = "Arbol", all.x = TRUE)
+        coords_df <- merge(coords_df,
+                           setNames(cl_extra, c("Arbol", paste0("Cluster_CLARA_K", ke))),
+                           by = "Arbol", all.x = TRUE)
       }
     }
-    
-    cat("\nColumnas del dataframe enriquecido:\n")
-    print(colnames(coords_df))
-    cat("Primeras filas:\n")
-    print(head(coords_df, 5))
-    
-    return(list(coords_df = coords_df, k_optimos = k_optimos, k_extra = k_extra))
   }
+  
+  # --- K-MEANS SUBDIVISIÓN ITERATIVA --- (fuera del loop, se lee una sola vez)
+  ruta_sub_iter_k <- file.path(dir_results, "kmeans_subdivision_iterativa.xlsx")
+  if (file.exists(ruta_sub_iter_k)) {
+    hojas_sub <- getSheetNames(ruta_sub_iter_k)
+    if ("Asignaciones_K_Optimo" %in% hojas_sub) {
+      sub_iter_df <- read.xlsx(ruta_sub_iter_k,
+                               sheet    = "Asignaciones_K_Optimo",
+                               startRow = 2,
+                               colNames = TRUE)
+      sub_iter_df$Arbol         <- as.character(sub_iter_df$Arbol)
+      sub_iter_df$Cluster_Final <- as.factor(sub_iter_df$Cluster_Final)
+      coords_df <- merge(coords_df,
+                         setNames(sub_iter_df[, c("Arbol", "Cluster_Final")],
+                                  c("Arbol", "Cluster_Kmeans_Iter")),
+                         by = "Arbol", all.x = TRUE)
+      cat(sprintf("  [KMEANS iterativa] %d árboles leídos\n", nrow(sub_iter_df)))
+    }
+  }
+  
+  # --- CLARA SUBDIVISIÓN ITERATIVA --- (fuera del loop, se lee una sola vez)
+  ruta_sub_iter_c <- file.path(dir_results, "clara_subdivision_iterativa.xlsx")
+  if (file.exists(ruta_sub_iter_c)) {
+    hojas_sub <- getSheetNames(ruta_sub_iter_c)
+    if ("Asignaciones_K_Optimo" %in% hojas_sub) {
+      sub_iter_df <- read.xlsx(ruta_sub_iter_c,
+                               sheet    = "Asignaciones_K_Optimo",
+                               startRow = 2,
+                               colNames = TRUE)
+      sub_iter_df$Arbol         <- as.character(sub_iter_df$Arbol)
+      sub_iter_df$Cluster_Final <- as.factor(sub_iter_df$Cluster_Final)
+      coords_df <- merge(coords_df,
+                         setNames(sub_iter_df[, c("Arbol", "Cluster_Final")],
+                                  c("Arbol", "Cluster_CLARA_Iter")),
+                         by = "Arbol", all.x = TRUE)
+      cat(sprintf("  [CLARA iterativa] %d árboles leídos\n", nrow(sub_iter_df)))
+    }
+  }
+  
+  # --- k_optimos ---
+  k_optimos <- c(
+  KMeans      = if ("Cluster_KMeans"      %in% colnames(coords_df))
+    length(unique(na.omit(coords_df$Cluster_KMeans)))      else NA,
+  PAM         = if ("Cluster_PAM"         %in% colnames(coords_df))
+    length(unique(na.omit(coords_df$Cluster_PAM)))         else NA,
+  CLARA       = if ("Cluster_CLARA"       %in% colnames(coords_df))
+    length(unique(na.omit(coords_df$Cluster_CLARA)))       else NA,
+  CLARA_Iter  = if ("Cluster_CLARA_Iter"  %in% colnames(coords_df))
+    length(unique(na.omit(coords_df$Cluster_CLARA_Iter)))  else NA,
+  KMeans_Iter = if ("Cluster_KMeans_Iter" %in% colnames(coords_df))
+    length(unique(na.omit(coords_df$Cluster_KMeans_Iter))) else NA
+)
+  
+  cat("\nColumnas del dataframe enriquecido:\n")
+  print(colnames(coords_df))
+  cat("Primeras filas:\n")
+  print(head(coords_df, 5))
+  
+  return(list(coords_df = coords_df, k_optimos = k_optimos, k_extra = k_extra))
+}
