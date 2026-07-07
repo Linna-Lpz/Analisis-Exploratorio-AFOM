@@ -12,6 +12,15 @@ library(openxlsx)
 source(here::here("Scripts", "config.R"))
 source(here::here("Scripts", "00_funciones_globales.R"))
 
+# Definir ruta del Excel generado por script 01 (permite ejecución aislada)
+ruta_especies_output <- file.path(DIR_RESULTS,
+                                  paste0("especies_analisis_", NOMBRE_BDD, ".xlsx"))
+
+if (!file.exists(ruta_especies_output)) {
+  stop("No se encontró el Excel de análisis de especies: ", ruta_especies_output,
+       "\nEjecuta primero el script 01_analisis_por_arbol.R")
+}
+
 # =============================================================================
 # LEER CORE_SET DESDE EL EXCEL DEL SCRIPT 01
 # Lee la primera fila de datos de "Resumen_Conteos" para obtener
