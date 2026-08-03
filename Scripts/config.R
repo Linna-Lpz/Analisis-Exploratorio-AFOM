@@ -15,7 +15,7 @@ DIR_PROCESSED <- here("Datos", "Procesados")
 DIR_RESULTS   <- here("Resultados")
 DIR_SCRIPTS   <- here("Scripts")
 
-DIR_CACHE <- file.path(DIR_PROCESSED, "cache") #TO DO: mover ubicación a resultados
+DIR_CACHE <- file.path(DIR_RESULTS, "cache")
 
 # ------------------------------------------------------------------------------
 # 3. Validación e Infraestructura

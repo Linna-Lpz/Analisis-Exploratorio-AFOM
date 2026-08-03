@@ -158,7 +158,7 @@ consultar_mygene <- function(gene_ids, especie = 9606, tamano_lote = 1000) {
 # =============================================================================
 cat("\n=== CONSULTANDO MYGENE.INFO ===\n")
 
-ruta_cache_hgnc <- file.path(DIR_CACHE, "hgnc_conversion2.rds")
+ruta_cache_hgnc <- file.path(DIR_CACHE, "hgnc_conversion.rds")
 
 if (file.exists(ruta_cache_hgnc)) {
   cat("Conversión HGNC encontrada en caché. Cargando...\n")
@@ -238,10 +238,10 @@ cat("\n=== EXPORTANDO LISTAS POR CLUSTER ===\n")
 
 # Columna de clustering a usar para las listas
 # Por defecto usa CLARA iterativa si existe, si no usa CLARA óptimo
-col_lista <- if ("Cluster_KMeans_Iter" %in% cols_cluster) "Cluster_KMeans_Iter" else
-  if ("Cluster_CLARA_Iter"  %in% cols_cluster) "Cluster_CLARA_Iter"  else
-    if ("Cluster_KMeans"      %in% cols_cluster) "Cluster_KMeans"      else
-      if ("Cluster_CLARA"       %in% cols_cluster) "Cluster_CLARA"       else
+col_lista <- if ("Cluster_CLARA_Iter" %in% cols_cluster) "Cluster_CLARA_Iter" else
+  if ("Cluster_CLARA"       %in% cols_cluster) "Cluster_CLARA"       else
+    if ("Cluster_KMeans_Iter"  %in% cols_cluster) "Cluster_KMeans_Iter"  else
+      if ("Cluster_KMeans"      %in% cols_cluster) "Cluster_KMeans"      else
         cols_cluster[1]
 
 cat(sprintf("Columna de clustering para listas: %s\n", col_lista))
@@ -299,7 +299,7 @@ wb_listas <- agregar_hoja_formateada(
 )
 
 ruta_listas <- file.path(DIR_RESULTS,
-                         paste0("hgnc_listas_por_cluster_2_", NOMBRE_BDD, ".xlsx"))
+                         paste0("hgnc_listas_por_cluster_", NOMBRE_BDD, ".xlsx"))
 saveWorkbook(wb_listas, ruta_listas, overwrite = TRUE)
 
 cat("Listas por cluster guardadas en:", ruta_listas, "\n")

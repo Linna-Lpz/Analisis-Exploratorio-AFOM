@@ -202,31 +202,31 @@ leer_asignaciones_xlsx <- function(ruta_xlsx, metodo,
   
   return(df[, c("Arbol", "Cluster")])
 }
-  
-  # ==============================================================================
-  # FUNCIÓN 4: Leer y unir etiquetas de clustering al dataframe de coordenadas
-  # ==============================================================================
-  #' Lee las asignaciones de K-Means, PAM y CLARA desde sus Excel respectivos
-  #' y las une al dataframe de coordenadas por la columna "Arbol".
-  #' Además de las asignaciones del k óptimo, lee también hojas de k adicionales
-  #' (por defecto k=10 y k=15) cuando existen.
-  #'
-  #' @param coords_df   Dataframe con coordenadas (debe tener columna "Arbol")
-  #' @param dir_results Directorio donde están los Excel de resultados (DIR_RESULTS)
-  #' @param nombre_kmeans Nombre del archivo Excel de K-Means (default: "kmeans_resultados.xlsx")
-  #' @param nombre_pam    Nombre del archivo Excel de PAM   (default: "pam_resultados.xlsx")
-  #' @param nombre_clara  Nombre del archivo Excel de CLARA (default: "clara_resultados.xlsx")
-  #' @param k_extra       Vector de k adicionales a leer (default: c(10, 15))
-  #' @return Lista con tres elementos:
-  #'         $coords_df : dataframe enriquecido con columnas Cluster_KMeans, Cluster_PAM, Cluster_CLARA
-  #'                      y columnas adicionales como Cluster_KMeans_K10, Cluster_CLARA_K15, etc.
-  #'         $k_optimos : named vector con el k usado por cada método (para subtítulos de gráficos)
-  #'         $k_extra   : vector de k adicionales efectivamente leídos
-  
+
+# ==============================================================================
+# FUNCIÓN 4: Leer y unir etiquetas de clustering al dataframe de coordenadas
+# ==============================================================================
+#' Lee las asignaciones de K-Means, PAM y CLARA desde sus Excel respectivos
+#' y las une al dataframe de coordenadas por la columna "Arbol".
+#' Además de las asignaciones del k óptimo, lee también hojas de k adicionales
+#' (por defecto k=10 y k=15) cuando existen.
+#'
+#' @param coords_df   Dataframe con coordenadas (debe tener columna "Arbol")
+#' @param dir_results Directorio donde están los Excel de resultados (DIR_RESULTS)
+#' @param nombre_kmeans Nombre del archivo Excel de K-Means (default: "kmeans_resultados.xlsx")
+#' @param nombre_pam    Nombre del archivo Excel de PAM   (default: "pam_resultados.xlsx")
+#' @param nombre_clara  Nombre del archivo Excel de CLARA (default: "clara_resultados.xlsx")
+#' @param k_extra       Vector de k adicionales a leer (default: c(10, 15))
+#' @return Lista con tres elementos:
+#'         $coords_df : dataframe enriquecido con columnas Cluster_KMeans, Cluster_PAM, Cluster_CLARA
+#'                      y columnas adicionales como Cluster_KMeans_K10, Cluster_CLARA_K15, etc.
+#'         $k_optimos : named vector con el k usado por cada método (para subtítulos de gráficos)
+#'         $k_extra   : vector de k adicionales efectivamente leídos
+
 unir_etiquetas_clustering <- function(coords_df,
                                       dir_results,
                                       nombre_kmeans = "kmeans_subdivision_iterativa.xlsx",
-                                      nombre_pam    = "pam_resultados_iterativa.xlsx",
+                                      nombre_pam    = "pam_resultados.xlsx",
                                       nombre_clara  = "clara_subdivision_iterativa.xlsx",
                                       k_extra       = c(10, 15)) {
   
@@ -332,17 +332,17 @@ unir_etiquetas_clustering <- function(coords_df,
   
   # --- k_optimos ---
   k_optimos <- c(
-  KMeans      = if ("Cluster_KMeans"      %in% colnames(coords_df))
-    length(unique(na.omit(coords_df$Cluster_KMeans)))      else NA,
-  PAM         = if ("Cluster_PAM"         %in% colnames(coords_df))
-    length(unique(na.omit(coords_df$Cluster_PAM)))         else NA,
-  CLARA       = if ("Cluster_CLARA"       %in% colnames(coords_df))
-    length(unique(na.omit(coords_df$Cluster_CLARA)))       else NA,
-  CLARA_Iter  = if ("Cluster_CLARA_Iter"  %in% colnames(coords_df))
-    length(unique(na.omit(coords_df$Cluster_CLARA_Iter)))  else NA,
-  KMeans_Iter = if ("Cluster_KMeans_Iter" %in% colnames(coords_df))
-    length(unique(na.omit(coords_df$Cluster_KMeans_Iter))) else NA
-)
+    KMeans      = if ("Cluster_KMeans"      %in% colnames(coords_df))
+      length(unique(na.omit(coords_df$Cluster_KMeans)))      else NA,
+    PAM         = if ("Cluster_PAM"         %in% colnames(coords_df))
+      length(unique(na.omit(coords_df$Cluster_PAM)))         else NA,
+    CLARA       = if ("Cluster_CLARA"       %in% colnames(coords_df))
+      length(unique(na.omit(coords_df$Cluster_CLARA)))       else NA,
+    CLARA_Iter  = if ("Cluster_CLARA_Iter"  %in% colnames(coords_df))
+      length(unique(na.omit(coords_df$Cluster_CLARA_Iter)))  else NA,
+    KMeans_Iter = if ("Cluster_KMeans_Iter" %in% colnames(coords_df))
+      length(unique(na.omit(coords_df$Cluster_KMeans_Iter))) else NA
+  )
   
   cat("\nColumnas del dataframe enriquecido:\n")
   print(colnames(coords_df))
@@ -350,4 +350,152 @@ unir_etiquetas_clustering <- function(coords_df,
   print(head(coords_df, 5))
   
   return(list(coords_df = coords_df, k_optimos = k_optimos, k_extra = k_extra))
+}
+
+# ==============================================================================
+# FUNCIÓN 5: Obtener uso de memoria (cross-platform: Linux/Windows)
+# ==============================================================================
+#' Retorna métricas de memoria en MB.
+#' @return Named list: ram_r_mb, ram_sistema_mb, ram_total_mb, pct_uso
+obtener_memoria_mb <- function() {
+  
+  # RAM usada por el proceso R (siempre disponible)
+  gc_info   <- gc(verbose = FALSE, reset = FALSE)
+  ram_r_mb  <- sum(gc_info[, "(MB)"])
+  
+  
+  # RAM del sistema operativo
+  ram_sistema_mb <- NA_real_
+  ram_total_mb   <- NA_real_
+  
+  if (.Platform$OS.type == "unix" && file.exists("/proc/meminfo")) {
+    # --- Linux (servidor) ---
+    meminfo <- readLines("/proc/meminfo", n = 10)
+    
+    total_line <- grep("^MemTotal:", meminfo, value = TRUE)
+    avail_line <- grep("^MemAvailable:", meminfo, value = TRUE)
+    
+    if (length(total_line) > 0) {
+      ram_total_mb <- as.numeric(gsub("[^0-9]", "", total_line)) / 1024
+    }
+    if (length(avail_line) > 0) {
+      ram_libre_mb   <- as.numeric(gsub("[^0-9]", "", avail_line)) / 1024
+      ram_sistema_mb <- ram_total_mb - ram_libre_mb
+    }
+    
+  } else if (.Platform$OS.type == "windows") {
+    # --- Windows (local) ---
+    tryCatch({
+      wmic <- system2("wmic", c("OS", "get",
+                                "FreePhysicalMemory,TotalVisibleMemorySize",
+                                "/value"),
+                      stdout = TRUE, stderr = TRUE)
+      wmic <- wmic[nchar(trimws(wmic)) > 0]
+      
+      free_line  <- grep("^FreePhysicalMemory=", wmic, value = TRUE)
+      total_line <- grep("^TotalVisibleMemorySize=", wmic, value = TRUE)
+      
+      if (length(total_line) > 0) {
+        ram_total_mb <- as.numeric(gsub("[^0-9]", "", total_line)) / 1024
+      }
+      if (length(free_line) > 0) {
+        ram_libre_mb   <- as.numeric(gsub("[^0-9]", "", free_line)) / 1024
+        ram_sistema_mb <- ram_total_mb - ram_libre_mb
+      }
+    }, error = function(e) NULL)
+  }
+  
+  pct_uso <- if (!is.na(ram_sistema_mb) && !is.na(ram_total_mb) && ram_total_mb > 0) {
+    round(ram_sistema_mb / ram_total_mb * 100, 1)
+  } else {
+    NA_real_
+  }
+  
+  list(
+    ram_r_mb       = round(ram_r_mb, 1),
+    ram_sistema_mb = round(ram_sistema_mb, 1),
+    ram_total_mb   = round(ram_total_mb, 1),
+    pct_uso        = pct_uso
+  )
+}
+
+# ==============================================================================
+# FUNCIÓN 6: Limpiar memoria con reporte
+# ==============================================================================
+#' Ejecuta gc() y reporta cuánta RAM se liberó.
+#' @param silencioso Si TRUE, no imprime nada en consola
+#' @return Lista con ram_antes y ram_despues (en MB)
+limpiar_memoria <- function(silencioso = FALSE) {
+  
+  antes <- obtener_memoria_mb()
+  gc(verbose = FALSE, reset = TRUE)
+  gc(verbose = FALSE)  # doble gc para liberar objetos de finalizer
+  despues <- obtener_memoria_mb()
+  
+  liberado <- round(antes$ram_r_mb - despues$ram_r_mb, 1)
+  
+  if (!silencioso) {
+    cat(sprintf("  [gc] R: %.1f MB -> %.1f MB (liberados: %.1f MB)\n",
+                antes$ram_r_mb, despues$ram_r_mb, liberado))
+  }
+  
+  invisible(list(antes = antes, despues = despues, liberado_mb = liberado))
+}
+
+# ==============================================================================
+# FUNCIÓN 7: Registrar memoria en log dataframe
+# ==============================================================================
+#' Agrega una fila al dataframe de log de memoria.
+#' @param log_df    Dataframe de log existente (o NULL para inicializar)
+#' @param paso      Nombre del paso (ej. "05a — UMAP")
+#' @param momento   "ANTES" o "DESPUÉS"
+#' @param imprimir  Si TRUE, imprime en consola
+#' @return Dataframe actualizado con la nueva fila
+registrar_memoria <- function(log_df = NULL, paso, momento, imprimir = TRUE) {
+  
+  mem <- obtener_memoria_mb()
+  
+  # Top 5 objetos más pesados en el entorno global
+  objetos <- ls(envir = globalenv())
+  if (length(objetos) > 0) {
+    tamanios <- sapply(objetos, function(x) {
+      tryCatch(object.size(get(x, envir = globalenv())),
+               error = function(e) 0)
+    })
+    top5 <- head(sort(tamanios, decreasing = TRUE), 5)
+    top5_txt <- paste(
+      sprintf("%s(%.0fMB)", names(top5), top5 / 1024^2),
+      collapse = ", "
+    )
+  } else {
+    top5_txt <- ""
+  }
+  
+  nueva_fila <- data.frame(
+    Timestamp      = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
+    Paso           = paso,
+    Momento        = momento,
+    RAM_R_MB       = mem$ram_r_mb,
+    RAM_Sistema_MB = ifelse(is.na(mem$ram_sistema_mb), NA, mem$ram_sistema_mb),
+    RAM_Total_MB   = ifelse(is.na(mem$ram_total_mb), NA, mem$ram_total_mb),
+    Pct_Uso        = ifelse(is.na(mem$pct_uso), NA, mem$pct_uso),
+    Objetos_Pesados = top5_txt,
+    stringsAsFactors = FALSE
+  )
+  
+  if (imprimir) {
+    sistema_txt <- if (!is.na(mem$ram_sistema_mb)) {
+      sprintf(" | Sistema: %.0f / %.0f MB (%.1f%%)",
+              mem$ram_sistema_mb, mem$ram_total_mb, mem$pct_uso)
+    } else {
+      ""
+    }
+    cat(sprintf("  [RAM] %-8s | R: %7.1f MB%s\n",
+                momento, mem$ram_r_mb, sistema_txt))
+  }
+  
+  if (is.null(log_df)) {
+    return(nueva_fila)
+  }
+  rbind(log_df, nueva_fila)
 }

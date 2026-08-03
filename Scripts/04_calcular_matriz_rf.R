@@ -9,9 +9,6 @@ source(here::here("Scripts", "config.R"))
 source(here::here("Scripts", "00_funciones_globales.R"))
 
 # --- Directorio de caché ---
-DIR_CACHE <- file.path(DIR_PROCESSED, "cache")
-if (!dir.exists(DIR_CACHE)) dir.create(DIR_CACHE, recursive = TRUE)
-
 ruta_cache_matriz <- file.path(DIR_CACHE, "matriz_rf.rds")
 
 # =============================================================================
@@ -20,7 +17,7 @@ ruta_cache_matriz <- file.path(DIR_CACHE, "matriz_rf.rds")
 cat("Iniciando lectura de árboles...\n")
 tiempo_lectura <- system.time({
   arboles_conjunto <- leer_bosque_zip(
-    directorio   = file.path(DIR_PROCESSED, "arboles_podados"),
+    directorio   = file.path(DIR_PROCESSED, "arboles_injertados"),
     ext_interna  = EXTENSION_ARBOLES,
     dir_cache   = DIR_CACHE
   )
@@ -49,6 +46,10 @@ if (file.exists(ruta_cache_matriz)) {
   })
   cat("Matriz calculada y guardada en caché:", nrow(matriz_cuadrada), "x", ncol(matriz_cuadrada), "\n")
 }
+
+# --- Liberar árboles de memoria (ya no se necesitan) ---
+rm(arboles_conjunto)
+gc(verbose = FALSE)
 
 # =============================================================================
 # EXPORTAR TAMBIÉN COMO CSV (opcional, para inspección externa)

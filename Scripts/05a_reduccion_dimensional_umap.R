@@ -217,11 +217,11 @@ for (ke in k_extra) {
   col_cl  <- paste0("Cluster_CLARA_K",  ke)
   
   pe_kmeans <- graficar_clustering(coords_df, col_km, "K-Means",
-                                    sprintf("k = %d  |  n = %d árboles", ke, nrow(coords_df)))
+                                   sprintf("k = %d  |  n = %d árboles", ke, nrow(coords_df)))
   pe_pam    <- graficar_clustering(coords_df, col_pam, "PAM (K-Medoids)",
-                                    sprintf("k = %d  |  n = %d árboles", ke, nrow(coords_df)))
+                                   sprintf("k = %d  |  n = %d árboles", ke, nrow(coords_df)))
   pe_clara  <- graficar_clustering(coords_df, col_cl, "CLARA",
-                                    sprintf("k = %d  |  n = %d árboles", ke, nrow(coords_df)))
+                                   sprintf("k = %d  |  n = %d árboles", ke, nrow(coords_df)))
   
   plots_extra <- Filter(Negate(is.null), list(pe_kmeans, pe_pam, pe_clara))
   
@@ -238,7 +238,7 @@ for (ke in k_extra) {
       )
     
     ruta_panel_extra <- file.path(DIR_RESULTS,
-                                   paste0("umap_comparativo_K", ke, "_", NOMBRE_BDD, ".png"))
+                                  paste0("umap_comparativo_K", ke, "_", NOMBRE_BDD, ".png"))
     ggsave(ruta_panel_extra,
            plot   = panel_extra,
            width  = 7 * min(length(plots_extra), 3),

@@ -29,7 +29,7 @@ cat("Árbol medioide identificado:", nombre_medioide, "\n")
 arboles <- leer_bosque_zip(directorio = file.path(DIR_INPUT, CARPETA_ARBOLES),
                            ext_interna = EXTENSION_ARBOLES,
                            dir_cache   = DIR_CACHE
-                           ) 
+) 
 
 # -- Extraer el medioide como tree1 (fijo para todas las comparaciones)
 tree1 <- arboles[[nombre_medioide]]
@@ -58,7 +58,7 @@ tiempo_funcion_ancla <- system.time({
     
     arbol_final <- tryCatch({
       resultado <- bind.tree(tree1_preparado, tree2, where = posicion_final)
-        collapse.singles(resultado)
+      collapse.singles(resultado)
     }, error = function(e) {
       return(NULL)
     })
@@ -151,9 +151,9 @@ cat("Tips máximo en unión    :", max(log_resultados$tips_union, na.rm = TRUE),
 # Guardar cada árbol unido como .rootree.zip individual
 # =============================================================================
 
-cat("\n=== GUARDANDO ÁRBOLES PODADOS ===\n")
+cat("\n=== GUARDANDO ÁRBOLES INJERTADOS ===\n")
 
-dir_arboles <- file.path(DIR_PROCESSED, "arboles_podados")
+dir_arboles <- file.path(DIR_PROCESSED, "arboles_injertados")
 if (!dir.exists(dir_arboles)) {
   dir.create(dir_arboles, recursive = TRUE)
   cat("Carpeta creada:", dir_arboles, "\n")
@@ -252,12 +252,12 @@ wb <- createWorkbook()
 agregar_hoja_formateada(wb, "Log_Comparaciones",
                         paste("Log de Comparaciones Medioide -", NOMBRE_BDD),
                         log_resultados
-                        )
+)
 
 agregar_hoja_formateada(wb, "Tiempos_Ejecucion",
                         paste("Tiempos de Ejecución Script 03 -", NOMBRE_BDD),
                         tiempos_df
-                        )
+)
 
 ruta_comparaciones_output <- file.path(DIR_RESULTS, paste0("comparaciones_medioide_", NOMBRE_BDD, ".xlsx"))
 saveWorkbook(wb, ruta_comparaciones_output, overwrite = TRUE)

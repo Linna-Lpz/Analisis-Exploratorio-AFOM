@@ -12,7 +12,7 @@ source(here::here("Scripts", "00_funciones_globales.R"))
 # =============================================================================
 # LEER MATRIZ DESDE CACHÉ .rds
 # =============================================================================
-ruta_cache_matriz <- file.path(DIR_PROCESSED, "cache", "matriz_rf.rds")
+ruta_cache_matriz <- file.path(DIR_CACHE, "matriz_rf.rds")
 if (!file.exists(ruta_cache_matriz)) {
   stop("No se encontró la matriz RF en caché. Ejecuta primero el script de cálculo RF.")
 }

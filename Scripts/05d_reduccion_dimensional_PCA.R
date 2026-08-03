@@ -52,8 +52,9 @@ if (file.exists(ruta_cache_pca)) {
     # center = TRUE : resta la media de cada columna (estándar en PCA)
     # scale  = FALSE: no escala por SD — las columnas ya están en la misma
     #                 unidad [0,1] al ser distancias RF normalizadas
-    pca_resultado <- prcomp(
+    pca_resultado <- irlba::prcomp_irlba(
       x      = matriz_cuadrada,
+      n      = N_COMPONENTS_GUARDAR,   # solo las 10 PCs que necesitas
       center = TRUE,
       scale. = FALSE
     )
@@ -102,6 +103,10 @@ coords_df <- data.frame(
   stringsAsFactors = FALSE
 )
 
+# --- Liberar matriz y resultado PCA de memoria ---
+rm(matriz_cuadrada, pca_resultado, coords_matrix)
+gc(verbose = FALSE)
+
 cat("\nPrimeras filas de coordenadas (PC1 y PC2):\n")
 print(head(coords_df[, 1:3], 5))
 
@@ -112,6 +117,24 @@ resultado  <- unir_etiquetas_clustering(coords_df, DIR_RESULTS)
 coords_df  <- resultado$coords_df
 k_optimos  <- resultado$k_optimos
 k_extra    <- resultado$k_extra
+
+# =============================================================================
+# VERIFICAR QUE HAY ETIQUETAS DE CLUSTERING
+# =============================================================================
+cols_cluster <- grep("^Cluster_", colnames(coords_df), value = TRUE)
+if (length(cols_cluster) == 0) {
+  stop(
+    "[PCA] No se encontraron asignaciones de clustering en Resultados/.\n",
+    "Ejecuta primero los scripts de clustering antes de la visualización:\n",
+    "  - clustering_kmeans.R\n",
+    "  - clustering_pam.R\n",
+    "  - clustering_clara.R\n",
+    "Los archivos esperados en Resultados/ son:\n",
+    "  kmeans_subdivision_iterativa.xlsx, pam_resultados.xlsx, clara_subdivision_iterativa.xlsx"
+  )
+}
+cat(sprintf("  [OK] Columnas de clustering cargadas (%d): %s\n",
+            length(cols_cluster), paste(cols_cluster, collapse = ", ")))
 
 k_km  <- ifelse(is.na(k_optimos["KMeans"]), "?", k_optimos["KMeans"])
 k_pam <- ifelse(is.na(k_optimos["PAM"]),    "?", k_optimos["PAM"])
@@ -129,14 +152,20 @@ graficar_clustering_pca <- function(df, col_cluster, titulo, subtitulo = "") {
     return(NULL)
   }
   n_clusters <- length(unique(na.omit(df[[col_cluster]])))
-  paleta <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00",
-              "#A65628", "#F781BF", "#999999", "#66C2A5", "#FC8D62",
-              "#8DA0CB", "#E78AC3", "#A6D854", "#FFD92F", "#E5C494",
-              "#B3B3B3", "#1B9E77", "#D95F02", "#7570B3", "#E7298A")
+  
+  # Paleta dinámica: fija hasta 20 clusters, generada dinámicamente para más
+  paleta <- if (n_clusters <= 20) {
+    c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00",
+      "#A65628", "#F781BF", "#999999", "#66C2A5", "#FC8D62",
+      "#8DA0CB", "#E78AC3", "#A6D854", "#FFD92F", "#E5C494",
+      "#B3B3B3", "#1B9E77", "#D95F02", "#7570B3", "#E7298A")[seq_len(n_clusters)]
+  } else {
+    hcl.colors(n_clusters, palette = "Dynamic")
+  }
   
   ggplot(df, aes(x = PC1, y = PC2, color = .data[[col_cluster]])) +
     geom_point(alpha = 0.6, size = 1.2) +
-    scale_color_manual(values = paleta[seq_len(n_clusters)],
+    scale_color_manual(values = paleta,
                        name = "Cluster", na.value = "grey80") +
     labs(
       title    = titulo,
@@ -148,9 +177,10 @@ graficar_clustering_pca <- function(df, col_cluster, titulo, subtitulo = "") {
     theme(
       plot.title      = element_text(face = "bold", size = 12),
       plot.subtitle   = element_text(color = "gray40", size = 9),
-      legend.position = "bottom"
+      # oculta la leyenda si hay demasiados clusters — evita que domine el panel
+      legend.position = if (n_clusters > 15) "none" else "bottom"
     ) +
-    guides(color = guide_legend(override.aes = list(size = 3, alpha = 1)))
+    guides(color = guide_legend(override.aes = list(size = 3, alpha = 1), ncol = 5))
 }
 
 p_kmeans <- graficar_clustering_pca(coords_df, "Cluster_KMeans", "K-Means",
@@ -162,23 +192,28 @@ p_clara  <- graficar_clustering_pca(coords_df, "Cluster_CLARA",  "CLARA",
 
 plots_disponibles <- Filter(Negate(is.null), list(p_kmeans, p_pam, p_clara))
 
-panel_comparativo <- wrap_plots(plots_disponibles, ncol = min(length(plots_disponibles), 3)) +
-  plot_annotation(
-    title   = paste0("Comparación de Algoritmos de Clustering — PCA (", NOMBRE_BDD, ")"),
-    caption = paste0("Distancia Robinson-Foulds normalizada  |  prcomp(center=TRUE, scale=FALSE)"),
-    theme   = theme(
-      plot.title   = element_text(face = "bold", size = 14, hjust = 0.5),
-      plot.caption = element_text(color = "gray50", size = 8, hjust = 0.5)
-    )
-  )
+# =============================================================================
+# GUARDAR GRÁFICOS INDIVIDUALES POR ALGORITMO (K ÓPTIMO)
+# =============================================================================
+cat("\n=== GUARDANDO GRÁFICOS INDIVIDUALES (K ÓPTIMO) ===\n")
 
-ruta_grafico <- file.path(DIR_RESULTS, paste0("pca_comparativo_clustering_", NOMBRE_BDD, ".png"))
-ggsave(ruta_grafico,
-       plot   = panel_comparativo,
-       width  = 7 * length(plots_disponibles),
-       height = 6,
-       dpi    = 300)
-cat("Panel comparativo PCA guardado:", ruta_grafico, "\n")
+if (length(plots_disponibles) > 0) {
+  for (g in list(
+    list(plot = p_kmeans, nombre = "pca_kmeans"),
+    list(plot = p_pam,    nombre = "pca_pam"),
+    list(plot = p_clara,  nombre = "pca_clara")
+  )) {
+    if (!is.null(g$plot)) {
+      ruta_g <- file.path(DIR_RESULTS, paste0(g$nombre, "_", NOMBRE_BDD, ".png"))
+      ggsave(ruta_g, plot = g$plot, width = 8, height = 6, dpi = 300)
+      cat("Gráfico guardado:", ruta_g, "\n")
+    }
+  }
+  rm(p_kmeans, p_pam, p_clara, plots_disponibles)
+  gc(verbose = FALSE)
+} else {
+  cat("  [aviso] Ninguna columna de clustering con k óptimo encontrada. Saltando gráficos individuales.\n")
+}
 
 # =============================================================================
 # GRÁFICOS PCA — K EXTRA (k=10, k=15, etc.)
@@ -191,33 +226,27 @@ for (ke in k_extra) {
   col_cl  <- paste0("Cluster_CLARA_K",  ke)
   
   pe_kmeans <- graficar_clustering_pca(coords_df, col_km, "K-Means",
-                                        sprintf("k = %d  |  n = %d árboles  |  PC1+PC2 = %.1f%%", ke, nrow(coords_df), var_total_2d))
+                                       sprintf("k = %d  |  n = %d árboles  |  PC1+PC2 = %.1f%%", ke, nrow(coords_df), var_total_2d))
   pe_pam    <- graficar_clustering_pca(coords_df, col_pam, "PAM (K-Medoids)",
-                                        sprintf("k = %d  |  n = %d árboles  |  PC1+PC2 = %.1f%%", ke, nrow(coords_df), var_total_2d))
+                                       sprintf("k = %d  |  n = %d árboles  |  PC1+PC2 = %.1f%%", ke, nrow(coords_df), var_total_2d))
   pe_clara  <- graficar_clustering_pca(coords_df, col_cl, "CLARA",
-                                        sprintf("k = %d  |  n = %d árboles  |  PC1+PC2 = %.1f%%", ke, nrow(coords_df), var_total_2d))
+                                       sprintf("k = %d  |  n = %d árboles  |  PC1+PC2 = %.1f%%", ke, nrow(coords_df), var_total_2d))
   
   plots_extra <- Filter(Negate(is.null), list(pe_kmeans, pe_pam, pe_clara))
   
   if (length(plots_extra) > 0) {
-    panel_extra <- wrap_plots(plots_extra, ncol = min(length(plots_extra), 3)) +
-      plot_annotation(
-        title   = paste0("Comparación de Clustering (k=", ke, ") — PCA (", NOMBRE_BDD, ")"),
-        caption = paste0("Distancia Robinson-Foulds normalizada  |  prcomp(center=TRUE, scale=FALSE)"),
-        theme   = theme(
-          plot.title   = element_text(face = "bold", size = 14, hjust = 0.5),
-          plot.caption = element_text(color = "gray50", size = 8, hjust = 0.5)
-        )
-      )
-    
-    ruta_extra <- file.path(DIR_RESULTS,
-                             paste0("pca_comparativo_K", ke, "_", NOMBRE_BDD, ".png"))
-    ggsave(ruta_extra,
-           plot   = panel_extra,
-           width  = 7 * length(plots_extra),
-           height = 6,
-           dpi    = 300)
-    cat("Panel comparativo PCA k=", ke, " guardado:", ruta_extra, "\n")
+    for (g in list(
+      list(plot = pe_kmeans, nombre = paste0("pca_kmeans_K", ke)),
+      list(plot = pe_pam,    nombre = paste0("pca_pam_K",    ke)),
+      list(plot = pe_clara,  nombre = paste0("pca_clara_K",  ke))
+    )) {
+      if (!is.null(g$plot)) {
+        ruta_g <- file.path(DIR_RESULTS, paste0(g$nombre, "_", NOMBRE_BDD, ".png"))
+        ggsave(ruta_g, plot = g$plot, width = 8, height = 6, dpi = 300)
+        cat("Gráfico guardado:", ruta_g, "\n")
+      }
+    }
+    rm(pe_kmeans, pe_pam, pe_clara)
   }
 }
 
@@ -440,6 +469,8 @@ agregar_hoja_formateada(wb, "Diagnostico",
 
 ruta_excel <- file.path(DIR_RESULTS, paste0("pca_coordenadas_", NOMBRE_BDD, ".xlsx"))
 saveWorkbook(wb, ruta_excel, overwrite = TRUE)
+rm(wb)
+gc(verbose = FALSE)
 cat("Coordenadas guardadas:", ruta_excel, "\n")
 
 cat("\n=== COMPLETADO ===\n")

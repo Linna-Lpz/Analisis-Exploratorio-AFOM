@@ -1,7 +1,7 @@
 # =============================================================================
 # 05c_reduccion_dimensional_tSNE.R
 # t-SNE sobre la matriz RF normalizada — con caché .rds
-# Salidas: coordenadas en Excel, gráfico ggplot2, caché .rds
+# Salidas: coordenadas en Excel, gráfico ggplot2, scree plot perplexity, caché .rds
 # =============================================================================
 
 library(Rtsne)
@@ -52,7 +52,7 @@ N_COMPONENTS <- 2       # dimensiones de salida
 MAX_ITER     <- 1000    # iteraciones de optimización
 THETA        <- 0.0     # aproximación Barnes-Hut: 0 = exacto (lento), 1 = rápido (menos preciso)
 SEED         <- 42
-N_THREADS    <- parallel::detectCores() - 1  # usar todos los núcleos menos uno
+N_THREADS    <- min(4, parallel::detectCores() - 1)  # limitar hilos para reducir uso de RAM
 
 cat(sprintf(
   "Hiperparámetros: perplexity = %d | max_iter = %d | theta = %.1f | threads = %d\n",
@@ -103,6 +103,14 @@ coords_df <- data.frame(
   stringsAsFactors = FALSE
 )
 
+# Extraer datos de convergencia ANTES de liberar el objeto
+itercosts   <- tsne_resultado$itercosts
+costo_final <- round(tail(itercosts, 1), 4)
+
+# --- Liberar matriz y resultado t-SNE de memoria ---
+rm(matriz_cuadrada, tsne_resultado)
+gc(verbose = FALSE)
+
 cat("\nPrimeras filas de coordenadas:\n")
 print(head(coords_df, 5))
 
@@ -113,6 +121,24 @@ resultado    <- unir_etiquetas_clustering(coords_df, DIR_RESULTS)
 coords_df    <- resultado$coords_df
 k_optimos    <- resultado$k_optimos
 k_extra      <- resultado$k_extra
+
+# =============================================================================
+# VERIFICAR QUE HAY ETIQUETAS DE CLUSTERING
+# =============================================================================
+cols_cluster <- grep("^Cluster_", colnames(coords_df), value = TRUE)
+if (length(cols_cluster) == 0) {
+  stop(
+    "[t-SNE] No se encontraron asignaciones de clustering en Resultados/.\n",
+    "Ejecuta primero los scripts de clustering antes de la visualización:\n",
+    "  - clustering_kmeans.R\n",
+    "  - clustering_pam.R\n",
+    "  - clustering_clara.R\n",
+    "Los archivos esperados en Resultados/ son:\n",
+    "  kmeans_subdivision_iterativa.xlsx, pam_resultados.xlsx, clara_subdivision_iterativa.xlsx"
+  )
+}
+cat(sprintf("  [OK] Columnas de clustering cargadas (%d): %s\n",
+            length(cols_cluster), paste(cols_cluster, collapse = ", ")))
 
 k_km  <- ifelse(is.na(k_optimos["KMeans"]), "?", k_optimos["KMeans"])
 k_pam <- ifelse(is.na(k_optimos["PAM"]),    "?", k_optimos["PAM"])
@@ -127,14 +153,20 @@ graficar_clustering_tsne <- function(df, col_cluster, titulo, subtitulo = "") {
     return(NULL)
   }
   n_clusters <- length(unique(na.omit(df[[col_cluster]])))
-  paleta <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00",
-              "#A65628", "#F781BF", "#999999", "#66C2A5", "#FC8D62",
-              "#8DA0CB", "#E78AC3", "#A6D854", "#FFD92F", "#E5C494",
-              "#B3B3B3", "#1B9E77", "#D95F02", "#7570B3", "#E7298A")
+  
+  # Paleta dinámica: fija hasta 20 clusters, generada dinámicamente para más
+  paleta <- if (n_clusters <= 20) {
+    c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00",
+      "#A65628", "#F781BF", "#999999", "#66C2A5", "#FC8D62",
+      "#8DA0CB", "#E78AC3", "#A6D854", "#FFD92F", "#E5C494",
+      "#B3B3B3", "#1B9E77", "#D95F02", "#7570B3", "#E7298A")[seq_len(n_clusters)]
+  } else {
+    hcl.colors(n_clusters, palette = "Dynamic")
+  }
   
   ggplot(df, aes(x = tSNE_1, y = tSNE_2, color = .data[[col_cluster]])) +
     geom_point(alpha = 0.6, size = 1.2) +
-    scale_color_manual(values = paleta[seq_len(n_clusters)],
+    scale_color_manual(values = paleta,
                        name = "Cluster", na.value = "grey80") +
     labs(title = titulo, subtitle = subtitulo,
          x = "t-SNE 1", y = "t-SNE 2") +
@@ -142,77 +174,42 @@ graficar_clustering_tsne <- function(df, col_cluster, titulo, subtitulo = "") {
     theme(
       plot.title      = element_text(face = "bold", size = 12),
       plot.subtitle   = element_text(color = "gray40", size = 9),
-      legend.position = "bottom"
+      # oculta la leyenda si hay demasiados clusters — evita que domine el panel
+      legend.position = if (n_clusters > 15) "none" else "bottom"
     ) +
-    guides(color = guide_legend(override.aes = list(size = 3, alpha = 1)))
+    guides(color = guide_legend(override.aes = list(size = 3, alpha = 1), ncol = 5))
 }
 
 # =============================================================================
-# GRÁFICO PRINCIPAL — distribución de árboles (sin clustering)
+# GRÁFICOS CLUSTERING t-SNE — K ÓPTIMO
 # =============================================================================
-cat("\n=== GENERANDO GRÁFICOS ===\n")
-
-costo_final <- round(tail(tsne_resultado$itercosts, 1), 4)
-
-p_tsne <- ggplot(coords_df, aes(x = tSNE_1, y = tSNE_2)) +
-  geom_point(
-    color = "forestgreen",
-    alpha = 0.6,
-    size  = 1.5
-  ) +
-  labs(
-    title    = paste0("t-SNE — Matriz RF Normalizada (", NOMBRE_BDD, ")"),
-    subtitle = paste0(
-      "perplexity = ", PERPLEXITY,
-      "  |  max_iter = ", MAX_ITER,
-      "  |  theta = ", THETA,
-      "  |  n = ", nrow(coords_df), " árboles"
-    ),
-    x       = "t-SNE 1",
-    y       = "t-SNE 2",
-    caption = paste0(
-      "Distancia Robinson-Foulds normalizada | Rtsne (Barnes-Hut)",
-      "  |  Costo final KL = ", costo_final
-    )
-  ) +
-  theme_minimal(base_size = 12) +
-  theme(
-    plot.title    = element_text(face = "bold"),
-    plot.subtitle = element_text(color = "gray40"),
-    plot.caption  = element_text(color = "gray60", size = 8)
-  )
-
-ruta_grafico <- file.path(DIR_RESULTS, paste0("tsne_", NOMBRE_BDD, ".png"))
-ggsave(ruta_grafico, plot = p_tsne, width = 10, height = 7, dpi = 300)
-cat("Gráfico t-SNE guardado:", ruta_grafico, "\n")
-
-# =============================================================================
-# GRÁFICOS CLUSTERING — K ÓPTIMO
-# =============================================================================
-cat("\n=== GRÁFICOS CLUSTERING tSNE (K ÓPTIMO) ===\n")
+cat("\n=== GENERANDO GRÁFICOS CLUSTERING tSNE (K ÓPTIMO) ===\n")
 
 p_km <- graficar_clustering_tsne(coords_df, "Cluster_KMeans", "K-Means",
-                                  sprintf("k = %s  |  n = %d árboles", k_km, nrow(coords_df)))
+                                 sprintf("k = %s  |  n = %d árboles", k_km, nrow(coords_df)))
 p_pa <- graficar_clustering_tsne(coords_df, "Cluster_PAM", "PAM (K-Medoids)",
-                                  sprintf("k = %s  |  n = %d árboles", k_pam, nrow(coords_df)))
+                                 sprintf("k = %s  |  n = %d árboles", k_pam, nrow(coords_df)))
 p_cl <- graficar_clustering_tsne(coords_df, "Cluster_CLARA", "CLARA",
-                                  sprintf("k = %s  |  n = %d árboles", k_cl, nrow(coords_df)))
+                                 sprintf("k = %s  |  n = %d árboles", k_cl, nrow(coords_df)))
 
-plots_disp <- Filter(Negate(is.null), list(p_km, p_pa, p_cl))
-if (length(plots_disp) > 0) {
-  panel <- wrap_plots(plots_disp, ncol = min(length(plots_disp), 3)) +
-    plot_annotation(
-      title   = paste0("Comparación de Clustering — t-SNE (", NOMBRE_BDD, ")"),
-      caption = paste0("Distancia RF normalizada  |  Rtsne  |  perplexity=", PERPLEXITY),
-      theme   = theme(
-        plot.title   = element_text(face = "bold", size = 14, hjust = 0.5),
-        plot.caption = element_text(color = "gray50", size = 8, hjust = 0.5)
-      )
-    )
-  ruta_panel <- file.path(DIR_RESULTS, paste0("tsne_comparativo_clustering_", NOMBRE_BDD, ".png"))
-  ggsave(ruta_panel, plot = panel, width = 7 * length(plots_disp), height = 6, dpi = 300)
-  cat("Panel comparativo guardado:", ruta_panel, "\n")
+# =============================================================================
+# GUARDAR GRÁFICOS INDIVIDUALES POR ALGORITMO (K ÓPTIMO)
+# =============================================================================
+cat("\n=== GUARDANDO GRÁFICOS INDIVIDUALES (K ÓPTIMO) ===\n")
+
+for (g in list(
+  list(plot = p_km, nombre = "tsne_kmeans"),
+  list(plot = p_pa, nombre = "tsne_pam"),
+  list(plot = p_cl, nombre = "tsne_clara")
+)) {
+  if (!is.null(g$plot)) {
+    ruta_g <- file.path(DIR_RESULTS, paste0(g$nombre, "_", NOMBRE_BDD, ".png"))
+    ggsave(ruta_g, plot = g$plot, width = 8, height = 6, dpi = 300)
+    cat("Gráfico guardado:", ruta_g, "\n")
+  }
 }
+rm(p_km, p_pa, p_cl)
+gc(verbose = FALSE)
 
 # =============================================================================
 # GRÁFICOS CLUSTERING — K EXTRA (k=10, k=15, etc.)
@@ -225,27 +222,24 @@ for (ke in k_extra) {
   col_cl  <- paste0("Cluster_CLARA_K",  ke)
   
   pe_km <- graficar_clustering_tsne(coords_df, col_km, "K-Means",
-                                     sprintf("k = %d  |  n = %d árboles", ke, nrow(coords_df)))
+                                    sprintf("k = %d  |  n = %d árboles", ke, nrow(coords_df)))
   pe_pa <- graficar_clustering_tsne(coords_df, col_pam, "PAM (K-Medoids)",
-                                     sprintf("k = %d  |  n = %d árboles", ke, nrow(coords_df)))
+                                    sprintf("k = %d  |  n = %d árboles", ke, nrow(coords_df)))
   pe_cl <- graficar_clustering_tsne(coords_df, col_cl, "CLARA",
-                                     sprintf("k = %d  |  n = %d árboles", ke, nrow(coords_df)))
+                                    sprintf("k = %d  |  n = %d árboles", ke, nrow(coords_df)))
   
-  plots_extra <- Filter(Negate(is.null), list(pe_km, pe_pa, pe_cl))
-  if (length(plots_extra) > 0) {
-    panel_extra <- wrap_plots(plots_extra, ncol = min(length(plots_extra), 3)) +
-      plot_annotation(
-        title   = paste0("Comparación de Clustering (k=", ke, ") — t-SNE (", NOMBRE_BDD, ")"),
-        caption = paste0("Distancia RF normalizada  |  Rtsne  |  perplexity=", PERPLEXITY),
-        theme   = theme(
-          plot.title   = element_text(face = "bold", size = 14, hjust = 0.5),
-          plot.caption = element_text(color = "gray50", size = 8, hjust = 0.5)
-        )
-      )
-    ruta_extra <- file.path(DIR_RESULTS, paste0("tsne_comparativo_K", ke, "_", NOMBRE_BDD, ".png"))
-    ggsave(ruta_extra, plot = panel_extra, width = 7 * length(plots_extra), height = 6, dpi = 300)
-    cat("Panel comparativo tSNE k=", ke, " guardado:", ruta_extra, "\n")
+  for (g in list(
+    list(plot = pe_km, nombre = paste0("tsne_kmeans_K", ke)),
+    list(plot = pe_pa, nombre = paste0("tsne_pam_K",    ke)),
+    list(plot = pe_cl, nombre = paste0("tsne_clara_K",  ke))
+  )) {
+    if (!is.null(g$plot)) {
+      ruta_g <- file.path(DIR_RESULTS, paste0(g$nombre, "_", NOMBRE_BDD, ".png"))
+      ggsave(ruta_g, plot = g$plot, width = 8, height = 6, dpi = 300)
+      cat("Gráfico guardado:", ruta_g, "\n")
+    }
   }
+  rm(pe_km, pe_pa, pe_cl)
 }
 
 # =============================================================================
@@ -253,8 +247,8 @@ for (ke in k_extra) {
 # Permite verificar si el algoritmo convergió antes de max_iter
 # =============================================================================
 convergencia_df <- data.frame(
-  iteracion = seq(50, MAX_ITER, by = 50)[seq_along(tsne_resultado$itercosts)],
-  costo_KL  = tsne_resultado$itercosts
+  iteracion = seq(50, MAX_ITER, by = 50)[seq_along(itercosts)],
+  costo_KL  = itercosts
 )
 
 p_conv <- ggplot(convergencia_df, aes(x = iteracion, y = costo_KL)) +
@@ -281,6 +275,110 @@ p_conv <- ggplot(convergencia_df, aes(x = iteracion, y = costo_KL)) +
 ruta_conv <- file.path(DIR_RESULTS, paste0("tsne_convergencia_", NOMBRE_BDD, ".png"))
 ggsave(ruta_conv, plot = p_conv, width = 8, height = 5, dpi = 300)
 cat("Gráfico de convergencia guardado:", ruta_conv, "\n")
+
+# =============================================================================
+# SCREE PLOT t-SNE — costo KL vs. perplexity
+# Análogo al scree del PCA: muestra cómo varía la calidad del embedding
+# (medida como costo KL final) al cambiar la perplexity.
+# Un costo KL bajo = mejor preservación de la estructura local.
+# =============================================================================
+cat("\n=== GENERANDO SCREE PLOT t-SNE (perplexity vs. costo KL) ===\n")
+
+# Recargar la matriz RF (fue liberada antes)
+scree_matriz_tsne <- readRDS(file.path(DIR_CACHE, "matriz_rf.rds"))
+n_obs            <- nrow(scree_matriz_tsne)
+
+# Rango válido de perplexity: debe cumplir perplexity < (n-1)/3
+perp_max_valido <- floor((n_obs - 1) / 3) - 1
+
+# Secuencia candidata de perplexities
+perp_candidatos <- c(5, 10, 20, 30, 50, 75, 100, 150, 200)
+perp_seq        <- perp_candidatos[perp_candidatos <= perp_max_valido]
+
+if (length(perp_seq) == 0) {
+  cat("  [aviso] No hay valores válidos de perplexity. Saltando scree plot.\n")
+} else {
+  cat(sprintf("Evaluando %d valores de perplexity: %s\n",
+              length(perp_seq), paste(perp_seq, collapse = ", ")))
+  
+  costo_kl_seq <- numeric(length(perp_seq))
+  
+  for (i in seq_along(perp_seq)) {
+    pp <- perp_seq[i]
+    cat(sprintf("  perplexity = %3d ...", pp))
+    res_tmp <- tryCatch({
+      set.seed(SEED)
+      Rtsne(
+        X                = scree_matriz_tsne,
+        dims             = 2,
+        perplexity       = pp,
+        max_iter         = 500,   # reducido para el scree (velocidad)
+        theta            = 0.5,   # Barnes-Hut para velocidad
+        is_distance      = TRUE,
+        pca              = FALSE,
+        normalize        = FALSE,
+        check_duplicates = FALSE,
+        verbose          = FALSE,
+        num_threads      = N_THREADS
+      )
+    }, error = function(e) NULL)
+    if (!is.null(res_tmp)) {
+      costo_kl_seq[i] <- tail(res_tmp$itercosts, 1)
+      cat(sprintf(" KL = %.4f\n", costo_kl_seq[i]))
+    } else {
+      costo_kl_seq[i] <- NA
+      cat(" [error — omitido]\n")
+    }
+  }
+  
+  rm(scree_matriz_tsne)
+  gc(verbose = FALSE)
+  
+  scree_tsne_df <- data.frame(
+    perplexity = perp_seq,
+    costo_KL   = costo_kl_seq,
+    stringsAsFactors = FALSE
+  )
+  scree_tsne_df$usado <- scree_tsne_df$perplexity == PERPLEXITY
+  
+  p_scree_tsne <- ggplot(scree_tsne_df, aes(x = perplexity, y = costo_KL)) +
+    geom_line(color = "darkorchid", linewidth = 0.8) +
+    geom_point(aes(shape = usado, size = usado,
+                   color = ifelse(usado, "usado", "otro"))) +
+    scale_color_manual(values = c("usado" = "firebrick", "otro" = "darkorchid"),
+                       guide  = "none") +
+    scale_shape_manual(values = c(`TRUE` = 18, `FALSE` = 16),
+                       labels = c(`TRUE` = paste0("perplexity = ", PERPLEXITY,
+                                                  " (valor usado)"),
+                                  `FALSE` = "Otros valores"),
+                       name   = "") +
+    scale_size_manual(values = c(`TRUE` = 4, `FALSE` = 2), guide = "none") +
+    labs(
+      title    = paste0("Scree Plot t-SNE — Perplexity vs. Costo KL (",
+                        NOMBRE_BDD, ")"),
+      subtitle = paste0(
+        "Divergencia KL final de t-SNE según la perplexity.\n",
+        "Valores más bajos indican mejor ajuste del embedding."
+      ),
+      x       = "Perplexity",
+      y       = "Costo KL final",
+      caption = paste0("Rombo rojo: perplexity = ", PERPLEXITY,
+                       " (valor usado en el análisis principal)  |  max_iter = 500 (exploratorio)")
+    ) +
+    scale_x_continuous(breaks = perp_seq) +
+    theme_minimal(base_size = 12) +
+    theme(
+      plot.title    = element_text(face = "bold"),
+      plot.subtitle = element_text(color = "gray40", size = 9),
+      plot.caption  = element_text(color = "gray60", size = 8),
+      legend.position = "bottom"
+    )
+  
+  ruta_scree_tsne <- file.path(DIR_RESULTS,
+                               paste0("tsne_scree_perplexity_", NOMBRE_BDD, ".png"))
+  ggsave(ruta_scree_tsne, plot = p_scree_tsne, width = 10, height = 6, dpi = 300)
+  cat("Scree plot t-SNE guardado:", ruta_scree_tsne, "\n")
+}
 
 # =============================================================================
 # EXPORTAR COORDENADAS Y DIAGNÓSTICO A EXCEL
@@ -319,6 +417,8 @@ agregar_hoja_formateada(wb, "Convergencia_KL",
 
 ruta_excel <- file.path(DIR_RESULTS, paste0("tsne_coordenadas_", NOMBRE_BDD, ".xlsx"))
 saveWorkbook(wb, ruta_excel, overwrite = TRUE)
+rm(wb)
+gc(verbose = FALSE)
 cat("Coordenadas guardadas:", ruta_excel, "\n")
 
 cat("\n=== COMPLETADO ===\n")
