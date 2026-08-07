@@ -52,8 +52,14 @@ print(
 )
 
 # 5. Generar Gráfico de Validación (Boxplot / Violin Plot) para la Tesis
+# Calcular test de Wilcoxon
+wt <- wilcox.test(N_Arboles ~ Tiene_Enriquecimiento, data = analisis_integrado)
+p_val_text <- sprintf("Prueba de Wilcoxon, p-value = %.2e", wt$p.value)
+cat("\nResultado Wilcoxon:", p_val_text, "\n")
+
 p_val <- ggplot(analisis_integrado, aes(x = Tiene_Enriquecimiento, y = N_Arboles, fill = Tiene_Enriquecimiento)) +
   geom_boxplot(alpha = 0.7, outlier.colour = "black", outlier.shape = 16) +
+  annotate("text", x = 1.5, y = max(analisis_integrado$N_Arboles, na.rm=TRUE) + 10, label = p_val_text, size = 5) +
   theme_minimal(base_size = 14) +
   labs(
     title = "Validación de Resiliencia del Pipeline frente al Sesgo de Injerto",
@@ -65,6 +71,7 @@ p_val <- ggplot(analisis_integrado, aes(x = Tiene_Enriquecimiento, y = N_Arboles
   scale_fill_manual(values = c("Con Significado Biológico (Verde)" = "#2ecc71", 
                                "Sin Enriquecimiento / Ruido (Rojo)" = "#e74c3c")) +
   theme(legend.position = "none", plot.title = element_text(face = "bold"))
+
 
 # Guardar el gráfico para el documento de tesis
 ggsave(file.path(DIR_RESULTS, "validacion_sesgo_injerto_boxplot.png"), plot = p_val, width = 8, height = 6, dpi = 300)

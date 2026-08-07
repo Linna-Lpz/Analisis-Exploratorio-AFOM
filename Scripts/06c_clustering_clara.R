@@ -22,6 +22,30 @@ dist_rf <- as.dist(matriz_cuadrada)
 cat("Matriz cargada:", nrow(matriz_cuadrada), "x", ncol(matriz_cuadrada), "\n")
 
 # =============================================================================
+# EMBEDDING MDS (k=20) PARA ESPACIO MÉTRICO CORRECTO
+# =============================================================================
+ruta_cache_mds <- file.path(DIR_CACHE, "mds_coords_k20.rds")
+N_DIMS <- 20
+
+if (file.exists(ruta_cache_mds)) {
+  cat(sprintf("Cargando embedding MDS (k=%d) desde caché...\n", N_DIMS))
+  mds_coords <- readRDS(ruta_cache_mds)
+} else {
+  cat(sprintf("Calculando embedding MDS (k=%d) para CLARA...\n", N_DIMS))
+  tiempo_mds <- system.time({
+    mds_coords <- cmdscale(as.dist(matriz_cuadrada), k = N_DIMS)
+  })
+  saveRDS(mds_coords, file = ruta_cache_mds)
+  cat(sprintf("MDS calculado en %.1f segundos y guardado en caché.\n", tiempo_mds[3]))
+}
+
+# Calcular varianza explicada
+var_total <- sum(matriz_cuadrada^2) / (2 * nrow(matriz_cuadrada)^2)
+var_mds   <- sum(apply(mds_coords, 2, var))
+var_exp   <- (var_mds / var_total) * 100
+cat(sprintf("Varianza explicada por %d dimensiones MDS: %.2f%%\n\n", N_DIMS, var_exp))
+
+# =============================================================================
 # FUNCIÓN CLARA
 # =============================================================================
 # NOTA: clara() no acepta objetos dist directamente — requiere la matriz
@@ -30,7 +54,7 @@ cat("Matriz cargada:", nrow(matriz_cuadrada), "x", ncol(matriz_cuadrada), "\n")
 # matriz cuadrada directamente como insumo de distancias.
 # dunn() y connectivity() siguen recibiendo la matriz original.
 # =============================================================================
-metodo_CLARA <- function(matriz_arboles, res_calidad_clusters,
+metodo_CLARA <- function(matriz_arboles, mds_coords, res_calidad_clusters,
                          muestras = 50, sampsize = NULL) {
   
   posibles_k <- seq(2, 15)
@@ -47,19 +71,21 @@ metodo_CLARA <- function(matriz_arboles, res_calidad_clusters,
     
     ss <- if (usar_sampsize_fijo) sampsize else min(n, 40 + 2 * i)
     
+    # CLARA opera sobre las coordenadas MDS
     clara_resultado <- clara(
-      x         = matriz_arboles,
+      x         = mds_coords,
       k         = i,
-      metric    = "euclidean",   # distancias ya precomputadas en la matriz
-      samples   = muestras,      # número de submuestras aleatorias
-      sampsize  = ss,            # tamaño de cada submuestra
-      keep.data = FALSE,         # no duplicar la matriz en memoria
-      rngR      = TRUE           # usar RNG de R (respeta set.seed)
+      metric    = "euclidean",   
+      samples   = muestras,      
+      sampsize  = ss,            
+      keep.data = FALSE,         
+      rngR      = TRUE           
     )
     
+    # Las validaciones se hacen sobre la disimilitud RF de referencia
     puntaje_Dunn         <- dunn(distance = matriz_arboles, clara_resultado$clustering)
     puntaje_Connectivity <- connectivity(distance = matriz_arboles, clara_resultado$clustering)
-    puntaje_Silhouette   <- clara_resultado$silinfo$avg.width
+    puntaje_Silhouette   <- mean(silhouette(clara_resultado$clustering, as.dist(matriz_arboles))[, 3])
     
     tmp <- c("CLARA", i,
              round(puntaje_Dunn, 3),
@@ -90,6 +116,7 @@ tiempo_inicio        <- proc.time()
 
 res_calidad_clusters <- metodo_CLARA(
   matriz_arboles       = matriz_cuadrada,
+  mds_coords           = mds_coords,
   res_calidad_clusters = res_calidad_clusters,
   muestras             = 50
 )
@@ -109,7 +136,7 @@ set.seed(2)
 n <- nrow(matriz_cuadrada)
 
 clara_optimo <- clara(
-  x         = matriz_cuadrada,
+  x         = mds_coords,
   k         = k_optimo,
   metric    = "euclidean",
   samples   = 50,
@@ -153,7 +180,7 @@ for (ke in k_extra) {
   cat(sprintf("Generando asignaciones CLARA para k = %d...\n", ke))
   set.seed(2)
   clara_extra <- clara(
-    x         = matriz_cuadrada,
+    x         = mds_coords,
     k         = ke,
     metric    = "euclidean",
     samples   = 50,

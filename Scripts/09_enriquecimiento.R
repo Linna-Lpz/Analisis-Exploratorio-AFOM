@@ -25,7 +25,7 @@ MAX_TERMINOS_PLOT <- 15             # top N términos a graficar por cluster
 
 # Columna de clustering a analizar
 # Prioriza CLARA iterativa, luego CLARA óptimo
-COL_CLUSTER <- "Cluster_CLARA_Iter" # otra op Cluster_Kmeans_Iter
+COL_CLUSTER <- "Cluster_KMeans_Iter" # otra op Cluster_Kmeans_Iter
 
 # =============================================================================
 # 1. CARGAR TABLA DE GENES AGRUPADOS
@@ -71,7 +71,7 @@ cat(sprintf("Con símbolo HGNC    : %d\n", sum(!is.na(genes_df$HGNC_Symbol))))
 # 2. FUNCIÓN DE ENRIQUECIMIENTO POR CLUSTER
 # =============================================================================
 enriquecer_cluster <- function(simbolos, cluster_id, organismo,
-                               fuentes, p_umbral, min_genes) {
+                               fuentes, p_umbral, min_genes, bg_universe) {
   
   # Filtrar NAs
   simbolos_validos <- simbolos[!is.na(simbolos) & simbolos != ""]
@@ -92,7 +92,8 @@ enriquecer_cluster <- function(simbolos, cluster_id, organismo,
          user_threshold     = p_umbral,
          significant        = TRUE,
          measure_underrepresentation = FALSE,
-         evcodes            = TRUE),   # incluir lista de genes por término
+         evcodes            = TRUE,    # incluir lista de genes por término
+         custom_bg          = bg_universe),
     error = function(e) {
       cat(sprintf("    ERROR en cluster %s: %s\n", cluster_id, e$message))
       NULL
@@ -146,7 +147,11 @@ enriquecer_cluster <- function(simbolos, cluster_id, organismo,
 cat("\n=== EJECUTANDO ENRIQUECIMIENTO FUNCIONAL ===\n")
 cat(sprintf("Fuentes    : %s\n", paste(FUENTES, collapse = ", ")))
 cat(sprintf("FDR umbral : %.2f\n", P_VALOR_UMBRAL))
-cat(sprintf("Min genes  : %d\n\n", MIN_GENES_TERMINO))
+cat(sprintf("Min genes  : %d\n", MIN_GENES_TERMINO))
+
+universo_hgnc <- unique(na.omit(genes_df$HGNC_Symbol))
+universo_hgnc <- universo_hgnc[universo_hgnc != ""]
+cat(sprintf("Fondo (bg) : %d genes únicos\n\n", length(universo_hgnc)))
 
 dir_cache_enrich <- file.path(DIR_CACHE, "enrichment")
 if (!dir.exists(dir_cache_enrich)) dir.create(dir_cache_enrich, recursive = TRUE)
@@ -169,12 +174,13 @@ for (cid in clusters_unicos) {
     res_cid <- readRDS(ruta_cache_cid)
   } else {
     res_cid <- enriquecer_cluster(
-      simbolos   = simbolos_cid,
-      cluster_id = cid,
-      organismo  = ORGANISMO,
-      fuentes    = FUENTES,
-      p_umbral   = P_VALOR_UMBRAL,
-      min_genes  = MIN_GENES_TERMINO
+      simbolos    = simbolos_cid,
+      cluster_id  = cid,
+      organismo   = ORGANISMO,
+      fuentes     = FUENTES,
+      p_umbral    = P_VALOR_UMBRAL,
+      min_genes   = MIN_GENES_TERMINO,
+      bg_universe = universo_hgnc
     )
     saveRDS(res_cid, ruta_cache_cid)
     Sys.sleep(0.3)  # pausa para no saturar la API

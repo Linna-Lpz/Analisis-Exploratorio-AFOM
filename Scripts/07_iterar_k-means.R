@@ -1,7 +1,12 @@
 # =============================================================================
-# SUBDIVISIÓN ITERATIVA DE CLUSTERS GRANDES — K-MEANS
-# Lee asignaciones de K-Means y subdivide con K-Means los clusters con
-# n > TAMANO_MAX hasta que todos tengan n <= TAMANO_MAX
+# SUBDIVISIÓN ITERATIVA DE CLUSTERS GRANDES — K-MEANS (subdivisión con PAM sobre RF)
+#
+# ACTUALIZACIóN: La subdivisión interna ya no usa K-Means euclidiano sino PAM
+# directamente sobre la submatriz de disimilitud Robinson-Foulds. Se añade un
+# criterio de parada por ganancia de Silhouette (DELTA_SIL): un cluster solo
+# se subdivide si la Silhouette promedio del resultado PAM(k=2) sobre la
+# submatriz RF es >= DELTA_SIL. Esto evita fraccionar clusters sin estructura
+# real en el espacio de referencia correcto.
 # =============================================================================
 library(cluster)
 library(openxlsx)
@@ -12,17 +17,16 @@ source(here::here("Scripts", "00_funciones_globales.R"))
 # =============================================================================
 # PARÁMETROS AJUSTABLES
 # =============================================================================
-TAMANO_MAX      <- 200   # clusters con más de N árboles se subdividen
-TAMANO_MIN_META <- 50    # tamaño mínimo deseado (informativo)
-TAM_MIN_CORTE   <- 20    # sub-cluster con MENOS de este nº invalida el corte
-K_INICIAL       <- 2     # k con el que se intenta primero cada corte
-K_MAXIMO        <- 6     # k máximo a probar si los intentos con k menor fallan
-NSTART          <- 25    # nstart de kmeans (igual que en el script principal)
-MAX_ITERACIONES <- 20    # tope de seguridad contra loops infinitos
-SEEDS           <- c(2L, 13L, 42L, 77L, 123L)
+TAMANO_MAX      <- 200    # clusters con más de N árboles son candidatos a subdividir
+TAMANO_MIN_DURO <- 15     # clusters con n < N no se subdividen (ni se enriquecen)
+TAMANO_MIN_META <- 50     # tamaño mínimo deseado (informativo)
+DELTA_SIL       <- 0.01   # ganancia mínima de Silhouette (sobre RF) para aceptar corte
+K_SUBDIVISION   <- 2      # k fijo para cada corte binario
+MAX_ITERACIONES <- 30     # tope de seguridad contra loops infinitos
+SEED            <- 2
 
 # Fuente de asignaciones K-Means: número (10, 15) o "optimo"
-K_FUENTE <- 15
+K_FUENTE <- "optimo"
 
 # =============================================================================
 # 1. CARGAR INSUMOS
@@ -35,6 +39,9 @@ if (!file.exists(ruta_cache_matriz)) {
 }
 matriz_cuadrada <- readRDS(ruta_cache_matriz)
 cat("Matriz RF:", nrow(matriz_cuadrada), "x", ncol(matriz_cuadrada), "\n")
+
+# dist_rf global (se reutilizará para la Silhouette final)
+dist_rf <- as.dist(matriz_cuadrada)
 
 ruta_kmeans <- file.path(DIR_RESULTS, "kmeans_resultados.xlsx")
 if (!file.exists(ruta_kmeans)) {
@@ -62,58 +69,66 @@ cat("Distribución inicial:\n")
 print(sort(table(asig_inicial$Cluster), decreasing = TRUE))
 
 # =============================================================================
-# 2. FUNCIÓN DE SUBDIVISIÓN CON K-MEANS
-#    Prueba k = K_INICIAL..K_MAXIMO × SEEDS.
-#    Acepta el primer corte donde todos los sub-clusters >= TAM_MIN_CORTE.
-#    Devuelve NULL si no encuentra ningún corte válido.
+# 2. FUNCIÓN DE SUBDIVISIÓN CON PAM SOBRE SUBMATRIZ RF
+#    Devuelve: list(asig = vector nombrado, sil_avg = Silhouette promedio)
 # =============================================================================
-subdividir <- function(ids_arboles, submatriz, k_inicial, k_maximo,
-                       tam_min_corte, nstart, seeds) {
+subdividir_con_pam <- function(ids_arboles, matriz_completa,
+                               k = 2, seed = 2, min_n = 3) {
+
   n <- length(ids_arboles)
-  
-  for (k in seq(k_inicial, k_maximo)) {
-    if (k >= n) break
-    
-    for (s in seeds) {
-      set.seed(s)
-      res <- tryCatch(
-        kmeans(submatriz, centers = k, nstart = nstart),
-        error = function(e) NULL
-      )
-      if (is.null(res)) next
-      
-      tam_sub <- as.integer(table(res$cluster))
-      
-      if (all(tam_sub >= tam_min_corte)) {
-        cat(sprintf("    Corte aceptado: k=%d, seed=%d → sub-clusters: %s\n",
-                    k, s,
-                    paste(sort(tam_sub, decreasing = TRUE), collapse = " | ")))
-        return(setNames(as.integer(res$cluster), ids_arboles))
-      } else {
-        cat(sprintf("    k=%d, seed=%d rechazado — mínimo sub-cluster: %d\n",
-                    k, s, min(tam_sub)))
-      }
-    }
+
+  if (n < max(k + 1, min_n)) {
+    return(list(asig = setNames(rep(1L, n), ids_arboles), sil_avg = NA,
+                razon = "n_insuficiente"))
   }
-  
-  return(NULL)
+
+  ids_validos <- ids_arboles[ids_arboles %in% rownames(matriz_completa)]
+  if (length(ids_validos) < k + 1) {
+    return(list(asig = setNames(rep(1L, n), ids_arboles), sil_avg = NA,
+                razon = "ids_no_en_matriz"))
+  }
+
+  submatriz <- matriz_completa[ids_validos, ids_validos]
+  dist_sub  <- as.dist(submatriz)
+
+  set.seed(seed)
+  pam_res <- tryCatch(
+    pam(dist_sub, k = k, diss = TRUE),
+    error = function(e) {
+      cat(sprintf("    ERROR pam: %s\n", e$message))
+      NULL
+    }
+  )
+
+  if (is.null(pam_res)) {
+    return(list(asig = setNames(rep(1L, n), ids_arboles), sil_avg = NA,
+                razon = "pam_error"))
+  }
+
+  sil_obj <- silhouette(pam_res$clustering, dist_sub)
+  sil_avg <- mean(sil_obj[, 3])
+
+  list(
+    asig    = setNames(as.integer(pam_res$clustering), ids_validos),
+    sil_avg = round(sil_avg, 4),
+    razon   = "ok"
+  )
 }
 
 # =============================================================================
 # 3. BUCLE ITERATIVO
 # =============================================================================
-cat("\n=== INICIANDO SUBDIVISIÓN ITERATIVA (K-Means) ===\n")
-cat(sprintf("Umbral subdivisión     : n > %d\n", TAMANO_MAX))
-cat(sprintf("Mínimo por sub-cluster : %d\n", TAM_MIN_CORTE))
-cat(sprintf("k a probar             : %d .. %d\n", K_INICIAL, K_MAXIMO))
-cat(sprintf("nstart                 : %d\n", NSTART))
-cat(sprintf("Seeds por intento      : %s\n\n", paste(SEEDS, collapse = ", ")))
+cat("\n=== INICIANDO SUBDIVISIÓN ITERATIVA (K-Means → PAM sobre RF) ===\n")
+cat(sprintf("Umbral subdivisión : n > %d\n", TAMANO_MAX))
+cat(sprintf("TAMANO_MIN_DURO   : n < %d no se subdividen\n", TAMANO_MIN_DURO))
+cat(sprintf("DELTA_SIL         : %.3f (Sil mínima para aceptar corte)\n", DELTA_SIL))
+cat(sprintf("k por corte       : %d\n\n", K_SUBDIVISION))
 
-estado_actual         <- setNames(asig_inicial$Cluster, asig_inicial$Arbol)
-log_subdivisiones     <- data.frame()
-clusters_irresolubles <- integer(0)
-iteracion             <- 0L
-tiempo_total          <- proc.time()
+estado_actual       <- setNames(asig_inicial$Cluster, asig_inicial$Arbol)
+log_subdivisiones   <- data.frame()
+clusters_rechazados <- data.frame()
+iteracion           <- 0L
+tiempo_total        <- proc.time()
 
 repeat {
   iteracion <- iteracion + 1L
@@ -124,77 +139,94 @@ repeat {
   }
   
   tamanos_actuales <- table(estado_actual)
-  clusters_grandes <- setdiff(
-    as.integer(names(tamanos_actuales[tamanos_actuales > TAMANO_MAX])),
-    clusters_irresolubles
-  )
-  
+  # Candidatos: clusters con n > TAMANO_MAX Y n >= TAMANO_MIN_DURO
+  clusters_grandes <- as.integer(names(tamanos_actuales[
+    tamanos_actuales > TAMANO_MAX & tamanos_actuales >= TAMANO_MIN_DURO
+  ]))
+
   if (length(clusters_grandes) == 0) {
-    cat(sprintf("Iteración %d: no quedan clusters subdividibles. Finalizado.\n", iteracion))
+    cat(sprintf("Iteración %d: ningún cluster supera TAMANO_MAX = %d. Finalizado.\n",
+                iteracion, TAMANO_MAX))
     break
   }
-  
-  cat(sprintf("--- Iteración %d: %d cluster(s) a subdividir ---\n",
+
+  cat(sprintf("--- Iteración %d: %d cluster(s) candidatos ---\n",
               iteracion, length(clusters_grandes)))
-  
+
   proximo_id   <- max(estado_actual) + 1L
   nuevo_estado <- estado_actual
-  
+  hubo_cambio  <- FALSE
+
   for (cid in clusters_grandes) {
-    arboles_cid     <- names(estado_actual[estado_actual == cid])
-    n_cid           <- length(arboles_cid)
-    arboles_validos <- arboles_cid[arboles_cid %in% rownames(matriz_cuadrada)]
-    
-    cat(sprintf("\n  Cluster %d (n=%d)...\n", cid, n_cid))
-    
-    submatriz  <- matriz_cuadrada[arboles_validos, arboles_validos]
-    asig_nueva <- subdividir(
-      ids_arboles   = arboles_validos,
-      submatriz     = submatriz,
-      k_inicial     = K_INICIAL,
-      k_maximo      = K_MAXIMO,
-      tam_min_corte = TAM_MIN_CORTE,
-      nstart        = NSTART,
-      seeds         = SEEDS
+    arboles_cid <- names(estado_actual[estado_actual == cid])
+    n_cid       <- length(arboles_cid)
+
+    cat(sprintf("\n  Cluster %d (n=%d):\n", cid, n_cid))
+
+    resultado_sub <- subdividir_con_pam(
+      ids_arboles     = arboles_cid,
+      matriz_completa = matriz_cuadrada,
+      k               = K_SUBDIVISION,
+      seed            = SEED,
+      min_n           = TAMANO_MIN_DURO
     )
-    
-    if (is.null(asig_nueva)) {
-      cat(sprintf("    Cluster %d marcado como irresoluble (conservado intacto).\n", cid))
-      clusters_irresolubles <- c(clusters_irresolubles, cid)
-      
-      log_subdivisiones <- rbind(log_subdivisiones, data.frame(
-        Iteracion           = iteracion,
-        Cluster_Original    = cid,
-        N_Original          = n_cid,
-        N_SubClusters       = 0L,
-        Tamanos_SubClusters = "NO_SUBDIVIDIDO",
-        stringsAsFactors    = FALSE
+
+    if (is.na(resultado_sub$sil_avg) || resultado_sub$razon != "ok") {
+      cat(sprintf("    → No subdividible (%s). Conservando.\n", resultado_sub$razon))
+      clusters_rechazados <- rbind(clusters_rechazados, data.frame(
+        Iteracion     = iteracion, Cluster = cid, N = n_cid,
+        Sil_Propuesta = NA, Decision = resultado_sub$razon
       ))
       next
     }
-    
-    sub_ids  <- sort(unique(asig_nueva))
-    mapa_ids <- setNames(
+
+    sil_propuesta <- resultado_sub$sil_avg
+
+    if (sil_propuesta < DELTA_SIL) {
+      cat(sprintf("    → Sil propuesta = %.4f < DELTA_SIL = %.3f. Conservando.\n",
+                  sil_propuesta, DELTA_SIL))
+      clusters_rechazados <- rbind(clusters_rechazados, data.frame(
+        Iteracion     = iteracion, Cluster = cid, N = n_cid,
+        Sil_Propuesta = sil_propuesta, Decision = "sil_insuficiente"
+      ))
+      next
+    }
+
+    cat(sprintf("    → Sil propuesta = %.4f >= %.3f. ACEPTADA.\n",
+                sil_propuesta, DELTA_SIL))
+
+    asig_nueva <- resultado_sub$asig
+    sub_ids    <- sort(unique(asig_nueva))
+    mapa_ids   <- setNames(
       c(cid, seq(proximo_id, proximo_id + length(sub_ids) - 2L)),
       sub_ids
     )
-    asig_reetiquetada             <- mapa_ids[as.character(asig_nueva)]
-    nuevo_estado[arboles_validos] <- asig_reetiquetada
+    asig_reetiquetada <- mapa_ids[as.character(asig_nueva)]
+
+    ids_validos_cid               <- names(asig_nueva)
+    nuevo_estado[ids_validos_cid] <- asig_reetiquetada
     proximo_id                    <- proximo_id + length(sub_ids) - 1L
-    
+    hubo_cambio                   <- TRUE
+
     tamanos_nuevos <- sort(as.integer(table(asig_reetiquetada)), decreasing = TRUE)
     log_subdivisiones <- rbind(log_subdivisiones, data.frame(
       Iteracion           = iteracion,
       Cluster_Original    = cid,
       N_Original          = n_cid,
+      Sil_Sub             = round(sil_propuesta, 4),
       N_SubClusters       = length(tamanos_nuevos),
       Tamanos_SubClusters = paste(tamanos_nuevos, collapse = " | "),
       stringsAsFactors    = FALSE
     ))
   }
-  
+
   estado_actual <- nuevo_estado
-  cat("\n")
+
+  if (!hubo_cambio) {
+    cat(sprintf("Iteración %d: ningún cluster aceptó subdivisión (Sil < DELTA_SIL). Finalizando.\n",
+                iteracion))
+    break
+  }
 }
 
 tiempo_total <- as.numeric(proc.time() - tiempo_total)[3]
@@ -221,13 +253,16 @@ tamanos_finales$Cluster <- as.integer(as.character(tamanos_finales$Cluster))
 colnames(tamanos_finales)[2] <- "Tamano"
 tamanos_finales <- tamanos_finales[order(tamanos_finales$Tamano, decreasing = TRUE), ]
 
+n_clusters_final <- length(unique(asig_final_df$Cluster_Final))
+n_bajo_15        <- sum(tamanos_finales$Tamano < 15)
+n_bajo_50        <- sum(tamanos_finales$Tamano < 50)
+
 cat(sprintf("Clusters iniciales (K-Means) : %d\n", length(unique(asig_inicial$Cluster))))
-cat(sprintf("Clusters finales             : %d\n", nrow(tamanos_finales)))
-cat(sprintf("  — dentro [%d, %d]         : %d\n",
-            TAMANO_MIN_META, TAMANO_MAX,
-            sum(tamanos_finales$Tamano >= TAMANO_MIN_META &
-                  tamanos_finales$Tamano <= TAMANO_MAX)))
-cat(sprintf("  — irresolubles             : %d\n", length(clusters_irresolubles)))
+cat(sprintf("Clusters finales             : %d\n", n_clusters_final))
+cat(sprintf("Clusters con n < 15         : %d (%.1f%%)\n",
+            n_bajo_15, 100 * n_bajo_15 / n_clusters_final))
+cat(sprintf("Clusters con n < 50         : %d (%.1f%%)\n",
+            n_bajo_50, 100 * n_bajo_50 / n_clusters_final))
 cat(sprintf("Árboles cubiertos            : %d / %d\n",
             nrow(asig_final_df), nrow(matriz_cuadrada)))
 cat(sprintf("Iteraciones                  : %d\n", iteracion - 1L))
@@ -235,13 +270,38 @@ cat(sprintf("Tiempo total                 : %.1f s\n", tiempo_total))
 cat("\nResumen tamaños:\n")
 print(summary(tamanos_finales$Tamano))
 
-if (length(clusters_irresolubles) > 0) {
-  ids_irr <- mapa_final[as.character(clusters_irresolubles)]
-  ids_irr <- ids_irr[!is.na(ids_irr)]
-  cat(sprintf("\nAVISO: %d cluster(s) no subdivididos (> %d árboles):\n",
-              length(ids_irr), TAMANO_MAX))
-  print(tamanos_finales[tamanos_finales$Cluster %in% ids_irr, ])
+# =============================================================================
+# 4b. SILHOUETTE GLOBAL DE LA PARTICIÓN FINAL (sobre dist_rf)
+# =============================================================================
+cat("\n=== CALCULANDO SILHOUETTE GLOBAL DE LA PARTICIÓN FINAL ===\n")
+cat("(sobre disimilitud RF — puede tardar varios minutos)\n")
+
+ids_con_asig   <- asig_final_df$Arbol[asig_final_df$Arbol %in% rownames(matriz_cuadrada)]
+submat_final   <- matriz_cuadrada[ids_con_asig, ids_con_asig]
+dist_final     <- as.dist(submat_final)
+asig_vec_final <- asig_final_df$Cluster_Final[match(ids_con_asig, asig_final_df$Arbol)]
+
+tiempo_sil <- proc.time()
+sil_final  <- tryCatch(
+  silhouette(asig_vec_final, dist_final),
+  error = function(e) { cat("ERROR silhouette global:", e$message, "\n"); NULL }
+)
+tiempo_sil <- as.numeric(proc.time() - tiempo_sil)[3]
+
+sil_global_avg <- if (!is.null(sil_final)) round(mean(sil_final[, 3]), 4) else NA
+cat(sprintf("Silhouette global (%d clusters, dist RF): %.4f\n",
+            n_clusters_final, sil_global_avg))
+cat(sprintf("Tiempo cálculo Silhouette: %.1f s\n", tiempo_sil))
+
+if (!is.null(sil_final)) {
+  sil_por_cluster <- tapply(sil_final[, 3], sil_final[, 1], mean)
+  tamanos_finales$Silhouette_Cluster <- round(
+    sil_por_cluster[as.character(tamanos_finales$Cluster)], 4
+  )
+} else {
+  tamanos_finales$Silhouette_Cluster <- NA
 }
+tamanos_finales$Apto_Enriquecimiento <- tamanos_finales$Tamano >= 15
 
 # =============================================================================
 # 5. EXPORTAR
@@ -250,34 +310,43 @@ cat("\n=== EXPORTANDO RESULTADOS ===\n")
 
 parametros_df <- data.frame(
   Parametro = c("algoritmo_origen", "algoritmo_subdivision", "k_fuente",
-                "hoja_fuente", "tamano_max_subdivision", "tamano_min_meta",
-                "tam_min_corte", "k_inicial", "k_maximo", "nstart",
-                "seeds", "max_iteraciones", "iteraciones_realizadas",
+                "hoja_fuente", "tamano_max", "tamano_min_duro", "delta_sil",
+                "k_subdivision", "max_iteraciones", "iteraciones_realizadas",
                 "clusters_iniciales", "clusters_finales",
-                "clusters_irresolubles", "arboles_totales", "tiempo_total_s"),
-  Valor = c("K-Means", "K-Means", as.character(K_FUENTE),
-            hoja_fuente, TAMANO_MAX, TAMANO_MIN_META, TAM_MIN_CORTE,
-            K_INICIAL, K_MAXIMO, NSTART,
-            paste(SEEDS, collapse = ","), MAX_ITERACIONES, iteracion - 1L,
-            length(unique(asig_inicial$Cluster)), nrow(tamanos_finales),
-            length(clusters_irresolubles),
+                "n_clusters_bajo_15", "n_clusters_bajo_50",
+                "silhouette_global_final", "arboles_totales", "tiempo_total_s"),
+  Valor = c("K-Means", "PAM sobre submatriz RF", as.character(K_FUENTE),
+            hoja_fuente, TAMANO_MAX, TAMANO_MIN_DURO, DELTA_SIL,
+            K_SUBDIVISION, MAX_ITERACIONES, iteracion - 1L,
+            length(unique(asig_inicial$Cluster)), n_clusters_final,
+            n_bajo_15, n_bajo_50,
+            sil_global_avg,
             nrow(asig_final_df), round(tiempo_total, 1))
 )
 
 wb <- createWorkbook()
 
 wb <- agregar_hoja_formateada(wb, "Asignaciones_K_Optimo",
-                              paste0("Asignaciones Finales — ", nrow(tamanos_finales),
-                                     " clusters (subdivisión iterativa K-Means desde ", titulo_fuente, ")"),
+                              paste0("Asignaciones Finales — ", n_clusters_final,
+                                     " clusters (K-Means → PAM/RF desde ", titulo_fuente, ")"),
                               asig_final_df, anchos_col = "auto")
 
-wb <- agregar_hoja_formateada(wb, "Tamanos_Finales",
-                              paste0("Tamaño de Clusters Finales (objetivo <= ", TAMANO_MAX, ")"),
+wb <- agregar_hoja_formateada(wb, "Tamanos_y_Silhouette",
+                              paste0("Tamaño y Silhouette por Cluster (Sil global = ",
+                                     sil_global_avg, ")"),
                               tamanos_finales, anchos_col = "auto")
 
-wb <- agregar_hoja_formateada(wb, "Log_Subdivisiones",
-                              "Log de Subdivisiones por Iteración",
-                              log_subdivisiones, anchos_col = "auto")
+if (nrow(log_subdivisiones) > 0) {
+  wb <- agregar_hoja_formateada(wb, "Log_Subdivisiones_Aceptadas",
+                                "Log de Subdivisiones Aceptadas (Sil >= DELTA_SIL)",
+                                log_subdivisiones, anchos_col = "auto")
+}
+
+if (nrow(clusters_rechazados) > 0) {
+  wb <- agregar_hoja_formateada(wb, "Log_Rechazados",
+                                "Clusters conservados (Sil < DELTA_SIL)",
+                                clusters_rechazados, anchos_col = "auto")
+}
 
 wb <- agregar_hoja_formateada(wb, "Parametros",
                               "Parámetros del Proceso",

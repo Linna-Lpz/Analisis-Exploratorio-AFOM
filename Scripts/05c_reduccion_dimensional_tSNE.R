@@ -50,7 +50,7 @@ ruta_cache_tsne <- file.path(DIR_CACHE, "tsne_coords.rds")
 PERPLEXITY   <- min(50, floor((nrow(matriz_cuadrada) - 1) / 3) - 1)
 N_COMPONENTS <- 2       # dimensiones de salida
 MAX_ITER     <- 1000    # iteraciones de optimización
-THETA        <- 0.0     # aproximación Barnes-Hut: 0 = exacto (lento), 1 = rápido (menos preciso)
+THETA        <- 0.5     # aproximación Barnes-Hut: 0 = exacto (lento), >0 = rápido (menos preciso)
 SEED         <- 42
 N_THREADS    <- min(4, parallel::detectCores() - 1)  # limitar hilos para reducir uso de RAM
 
@@ -378,6 +378,57 @@ if (length(perp_seq) == 0) {
                                paste0("tsne_scree_perplexity_", NOMBRE_BDD, ".png"))
   ggsave(ruta_scree_tsne, plot = p_scree_tsne, width = 10, height = 6, dpi = 300)
   cat("Scree plot t-SNE guardado:", ruta_scree_tsne, "\n")
+}
+
+# =============================================================================
+# GRÁFICO tSNE — MST-KNN SUBDIVISIÓN ITERATIVA
+# =============================================================================
+if ("Cluster_MSTKNN_Iter" %in% colnames(coords_df)) {
+  
+  n_iter <- length(unique(na.omit(coords_df$Cluster_MSTKNN_Iter)))
+  cat(sprintf("\n=== GENERANDO GRÁFICO MST-KNN ITERATIVA (k=%d) ===\n", n_iter))
+  
+  # Paleta ampliada — hcl.colors para k grande
+  paleta_iter <- if (n_iter <= 20) {
+    c("#E41A1C","#377EB8","#4DAF4A","#984EA3","#FF7F00",
+      "#A65628","#F781BF","#999999","#66C2A5","#FC8D62",
+      "#8DA0CB","#E78AC3","#A6D854","#FFD92F","#E5C494",
+      "#B3B3B3","#1B9E77","#D95F02","#7570B3","#E7298A")[seq_len(n_iter)]
+  } else {
+    hcl.colors(n_iter, palette = "Dynamic")
+  }
+  
+  p_iter <- ggplot(coords_df,
+                   aes(x = tSNE_1, y = tSNE_2, color = Cluster_MSTKNN_Iter)) +
+    geom_point(alpha = 0.6, size = 1.2) +
+    scale_color_manual(values = paleta_iter,
+                       name   = "Cluster",
+                       na.value = "grey80") +
+    labs(
+      title    = "MST-KNN — Subdivisión Iterativa",
+      subtitle = sprintf("k = %d  |  n = %d árboles", n_iter, nrow(coords_df)),
+      x        = "t-SNE 1",
+      y        = "t-SNE 2"
+    ) +
+    theme_minimal(base_size = 11) +
+    theme(
+      plot.title      = element_text(face = "bold", size = 12),
+      plot.subtitle   = element_text(color = "gray40", size = 9),
+      # ocultar leyenda si hay muchos clusters — satura el gráfico
+      legend.position = if (n_iter > 15) "none" else "bottom"
+    ) +
+    guides(color = guide_legend(
+      override.aes = list(size = 3, alpha = 1),
+      ncol = 5   # leyenda en 5 columnas si se muestra
+    ))
+  
+  ruta_iter <- file.path(DIR_RESULTS,
+                         paste0("tsne_mstknn_iterativa_", NOMBRE_BDD, ".png"))
+  ggsave(ruta_iter, plot = p_iter, width = 9, height = 7, dpi = 300)
+  cat("Gráfico MST-KNN iterativa guardado:", ruta_iter, "\n")
+  
+} else {
+  cat("Columna 'Cluster_MSTKNN_Iter' no encontrada. Saltando gráfico iterativo.\n")
 }
 
 # =============================================================================

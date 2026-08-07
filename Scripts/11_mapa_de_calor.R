@@ -64,6 +64,13 @@ cat(sprintf("Términos compartidos (>= %d clusters): %d\n",
 cat(sprintf("Términos seleccionados (top %d): %d\n",
             TOP_N_TERMINOS, nrow(terminos_compartidos)))
 
+if (nrow(terminos_compartidos) == 0) {
+  cat(sprintf("\nNo hay términos funcionales compartidos entre %d o más clusters para la ontología %s.\n", MIN_CLUSTERS, FUENTE_ANALIZAR))
+  cat("El análisis de enriquecimiento es tan específico que cada clúster tiene su propia huella biológica única.\n")
+  cat("No se puede generar el mapa de calor cruzado, abortando ejecución con éxito.\n")
+  quit(save = "no", status = 0)
+}
+
 # Filtrar datos a solo esos términos
 df_heatmap <- df_filtrado %>%
   filter(Termino %in% terminos_compartidos$Termino)

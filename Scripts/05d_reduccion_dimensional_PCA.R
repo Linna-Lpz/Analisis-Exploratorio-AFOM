@@ -416,6 +416,58 @@ if ("Cluster_CLARA_Iter" %in% colnames(coords_df)) {
 }
 
 # =============================================================================
+# GRÁFICO PCA — MST-KNN SUBDIVISIÓN ITERATIVA
+# =============================================================================
+if ("Cluster_MSTKNN_Iter" %in% colnames(coords_df)) {
+  
+  n_iter <- length(unique(na.omit(coords_df$Cluster_MSTKNN_Iter)))
+  cat(sprintf("\n=== GENERANDO GRÁFICO MST-KNN ITERATIVA (k=%d) ===\n", n_iter))
+  
+  # Paleta ampliada — hcl.colors para k grande
+  paleta_iter <- if (n_iter <= 20) {
+    c("#E41A1C","#377EB8","#4DAF4A","#984EA3","#FF7F00",
+      "#A65628","#F781BF","#999999","#66C2A5","#FC8D62",
+      "#8DA0CB","#E78AC3","#A6D854","#FFD92F","#E5C494",
+      "#B3B3B3","#1B9E77","#D95F02","#7570B3","#E7298A")[seq_len(n_iter)]
+  } else {
+    hcl.colors(n_iter, palette = "Dynamic")
+  }
+  
+  p_iter <- ggplot(coords_df,
+                   aes(x = PC1, y = PC2, color = Cluster_MSTKNN_Iter)) +
+    geom_point(alpha = 0.6, size = 1.2) +
+    scale_color_manual(values = paleta_iter,
+                       name   = "Cluster",
+                       na.value = "grey80") +
+    labs(
+      title    = "MST-KNN — Subdivisión Iterativa",
+      subtitle = sprintf("k = %d  |  n = %d árboles  |  PC1+PC2 = %.1f%%",
+                         n_iter, nrow(coords_df), var_total_2d),
+      x        = paste0("PC1 (", var_pc1, "%)"),
+      y        = paste0("PC2 (", var_pc2, "%)")
+    ) +
+    theme_minimal(base_size = 11) +
+    theme(
+      plot.title      = element_text(face = "bold", size = 12),
+      plot.subtitle   = element_text(color = "gray40", size = 9),
+      # ocultar leyenda si hay muchos clusters — satura el gráfico
+      legend.position = if (n_iter > 15) "none" else "bottom"
+    ) +
+    guides(color = guide_legend(
+      override.aes = list(size = 3, alpha = 1),
+      ncol = 5   # leyenda en 5 columnas si se muestra
+    ))
+  
+  ruta_iter <- file.path(DIR_RESULTS,
+                         paste0("pca_mstknn_iterativa_", NOMBRE_BDD, ".png"))
+  ggsave(ruta_iter, plot = p_iter, width = 9, height = 7, dpi = 300)
+  cat("Gráfico MST-KNN iterativa guardado:", ruta_iter, "\n")
+  
+} else {
+  cat("Columna 'Cluster_MSTKNN_Iter' no encontrada. Saltando gráfico iterativo.\n")
+}
+
+# =============================================================================
 # EXPORTAR COORDENADAS Y DIAGNÓSTICO A EXCEL
 # =============================================================================
 cat("\n=== EXPORTANDO RESULTADOS ===\n")

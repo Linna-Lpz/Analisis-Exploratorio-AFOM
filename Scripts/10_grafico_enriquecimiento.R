@@ -32,6 +32,13 @@ terminos_compartidos <- df_filtrado %>%
   arrange(desc(N_Clusters), desc(FDR_Medio)) %>%
   slice_head(n = TOP_N_TERMINOS) # Nos quedamos con los más compartidos y significativos
 
+if (nrow(terminos_compartidos) == 0) {
+  cat(sprintf("\nNo hay términos funcionales compartidos entre %d o más clusters para la ontología %s.\n", MIN_CLUSTERS, FUENTE_ANALIZAR))
+  cat("El análisis de enriquecimiento es tan específico que cada clúster tiene su propia huella biológica única.\n")
+  cat("No se puede generar el gráfico de burbujas cruzado, abortando ejecución con éxito.\n")
+  quit(save = "no", status = 0)
+}
+
 # Quedarnos solo con los datos de esos términos top
 df_plot <- df_filtrado %>%
   filter(Termino %in% terminos_compartidos$Termino)

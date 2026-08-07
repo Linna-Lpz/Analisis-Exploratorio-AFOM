@@ -238,7 +238,7 @@ cat("\n=== EXPORTANDO LISTAS POR CLUSTER ===\n")
 
 # Columna de clustering a usar para las listas
 # Por defecto usa CLARA iterativa si existe, si no usa CLARA óptimo
-col_lista <- if ("Cluster_CLARA_Iter" %in% cols_cluster) "Cluster_CLARA_Iter" else
+col_lista <- if ("Cluster_KMeans_Iter" %in% cols_cluster) "Cluster_KMeans_Iter" else
   if ("Cluster_CLARA"       %in% cols_cluster) "Cluster_CLARA"       else
     if ("Cluster_KMeans_Iter"  %in% cols_cluster) "Cluster_KMeans_Iter"  else
       if ("Cluster_KMeans"      %in% cols_cluster) "Cluster_KMeans"      else

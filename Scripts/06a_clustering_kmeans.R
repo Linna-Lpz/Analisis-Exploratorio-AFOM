@@ -22,9 +22,33 @@ matriz_cuadrada <- readRDS(ruta_cache_matriz)
 cat("Matriz cargada:", nrow(matriz_cuadrada), "x", ncol(matriz_cuadrada), "\n")
 
 # =============================================================================
+# EMBEDDING MDS (k=20) PARA ESPACIO MÉTRICO CORRECTO
+# =============================================================================
+ruta_cache_mds <- file.path(DIR_CACHE, "mds_coords_k20.rds")
+N_DIMS <- 20
+
+if (file.exists(ruta_cache_mds)) {
+  cat(sprintf("Cargando embedding MDS (k=%d) desde caché...\n", N_DIMS))
+  mds_coords <- readRDS(ruta_cache_mds)
+} else {
+  cat(sprintf("Calculando embedding MDS (k=%d) para K-Means...\n", N_DIMS))
+  tiempo_mds <- system.time({
+    mds_coords <- cmdscale(as.dist(matriz_cuadrada), k = N_DIMS)
+  })
+  saveRDS(mds_coords, file = ruta_cache_mds)
+  cat(sprintf("MDS calculado en %.1f segundos y guardado en caché.\n", tiempo_mds[3]))
+}
+
+# Calcular varianza explicada (aproximación rápida)
+var_total <- sum(matriz_cuadrada^2) / (2 * nrow(matriz_cuadrada)^2)
+var_mds   <- sum(apply(mds_coords, 2, var))
+var_exp   <- (var_mds / var_total) * 100
+cat(sprintf("Varianza explicada por %d dimensiones MDS: %.2f%%\n\n", N_DIMS, var_exp))
+
+# =============================================================================
 # FUNCIÓN K-MEANS
 # =============================================================================
-metodo_KMEANS <- function(matriz_distancia_arboles, res_calidad_clusters) {
+metodo_KMEANS <- function(matriz_distancia_arboles, mds_coords, res_calidad_clusters) {
   
   posibles_k <- seq(2, 15)
   set.seed(2)
@@ -32,11 +56,13 @@ metodo_KMEANS <- function(matriz_distancia_arboles, res_calidad_clusters) {
   for (i in posibles_k) {
     cat(sprintf("  Calculando k = %d...\n", i))
     
-    clusters <- kmeans(matriz_distancia_arboles, centers = i, nstart = 25)
+    # K-Means opera sobre las coordenadas MDS (espacio euclidiano representativo de RF)
+    clusters <- kmeans(mds_coords, centers = i, nstart = 25)
     
+    # Las métricas de validación se evalúan sobre la matriz de disimilitud RF original
     puntaje_Dunn         <- dunn(distance = matriz_distancia_arboles, clusters$cluster)
     puntaje_Connectivity <- connectivity(distance = matriz_distancia_arboles, clusters$cluster)
-    puntaje_Silhouette   <- mean(silhouette(clusters$cluster, matriz_distancia_arboles)[, 3])
+    puntaje_Silhouette   <- mean(silhouette(clusters$cluster, as.dist(matriz_distancia_arboles))[, 3])
     
     tmp <- c("Kmeans", i,
              round(puntaje_Dunn, 3),
@@ -73,6 +99,7 @@ if (file.exists(ruta_cache_calidad)) {
   tiempo_kmeans <- system.time({
     res_calidad_clusters <- metodo_KMEANS(
       matriz_distancia_arboles = matriz_cuadrada,
+      mds_coords               = mds_coords,
       res_calidad_clusters     = res_calidad_clusters
     )
   })
@@ -93,10 +120,10 @@ print(res_calidad_clusters)
 # K ÓPTIMO Y ASIGNACIONES
 # =============================================================================
 k_optimo <- res_calidad_clusters$k[which.max(res_calidad_clusters$Silhouette)]
-cat(sprintf("K óptimo según Silhouette: %d\n", k_optimo))
+cat(sprintf("K óptimo según Silhouette (sobre dist RF): %d\n", k_optimo))
 
 set.seed(2)
-clusters_optimos <- kmeans(matriz_cuadrada, centers = k_optimo, nstart = 25)
+clusters_optimos <- kmeans(mds_coords, centers = k_optimo, nstart = 25)
 
 asignaciones_df <- data.frame(
   Arbol   = rownames(matriz_cuadrada),
@@ -116,7 +143,7 @@ asignaciones_extra <- list()
 for (ke in k_extra) {
   cat(sprintf("Generando asignaciones para k = %d...\n", ke))
   set.seed(2)
-  cl_extra <- kmeans(matriz_cuadrada, centers = ke, nstart = 25)
+  cl_extra <- kmeans(mds_coords, centers = ke, nstart = 25)
 
   asig_extra <- data.frame(
     Arbol   = rownames(matriz_cuadrada),

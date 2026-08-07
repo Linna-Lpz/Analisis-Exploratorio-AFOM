@@ -330,6 +330,25 @@ unir_etiquetas_clustering <- function(coords_df,
     }
   }
   
+  # --- MSTKNN SUBDIVISIÓN ITERATIVA --- (fuera del loop, se lee una sola vez)
+  ruta_sub_iter_m <- file.path(dir_results, "mstknn_subdivision_iterativa.xlsx")
+  if (file.exists(ruta_sub_iter_m)) {
+    hojas_sub <- getSheetNames(ruta_sub_iter_m)
+    if ("Asignaciones_Finales" %in% hojas_sub) {
+      sub_iter_df <- read.xlsx(ruta_sub_iter_m,
+                               sheet    = "Asignaciones_Finales",
+                               startRow = 2,
+                               colNames = TRUE)
+      sub_iter_df$Arbol         <- as.character(sub_iter_df$Arbol)
+      sub_iter_df$Cluster_Final <- as.factor(sub_iter_df$Cluster_Final)
+      coords_df <- merge(coords_df,
+                         setNames(sub_iter_df[, c("Arbol", "Cluster_Final")],
+                                  c("Arbol", "Cluster_MSTKNN_Iter")),
+                         by = "Arbol", all.x = TRUE)
+      cat(sprintf("  [MSTKNN iterativa] %d árboles leídos\n", nrow(sub_iter_df)))
+    }
+  }
+  
   # --- k_optimos ---
   k_optimos <- c(
     KMeans      = if ("Cluster_KMeans"      %in% colnames(coords_df))
@@ -341,7 +360,9 @@ unir_etiquetas_clustering <- function(coords_df,
     CLARA_Iter  = if ("Cluster_CLARA_Iter"  %in% colnames(coords_df))
       length(unique(na.omit(coords_df$Cluster_CLARA_Iter)))  else NA,
     KMeans_Iter = if ("Cluster_KMeans_Iter" %in% colnames(coords_df))
-      length(unique(na.omit(coords_df$Cluster_KMeans_Iter))) else NA
+      length(unique(na.omit(coords_df$Cluster_KMeans_Iter))) else NA,
+    MSTKNN_Iter = if ("Cluster_MSTKNN_Iter" %in% colnames(coords_df))
+      length(unique(na.omit(coords_df$Cluster_MSTKNN_Iter))) else NA
   )
   
   cat("\nColumnas del dataframe enriquecido:\n")
