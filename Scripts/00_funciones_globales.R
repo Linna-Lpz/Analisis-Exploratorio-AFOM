@@ -382,7 +382,7 @@ obtener_memoria_mb <- function() {
   
   # RAM usada por el proceso R (siempre disponible)
   gc_info   <- gc(verbose = FALSE, reset = FALSE)
-  ram_r_mb  <- sum(gc_info[, "(MB)"])
+  ram_r_mb  <- sum(gc_info[, 2]) # La columna 2 siempre es 'used (Mb)'
   
   
   # RAM del sistema operativo

@@ -12,6 +12,8 @@ library(openxlsx)
 suppressPackageStartupMessages({
   library(clusterProfiler)
   library(org.Hs.eg.db)
+  library(doParallel)
+  library(foreach)
 })
 
 # =============================================================================
@@ -89,23 +91,30 @@ terminos_reales <- calcular_enriquecimiento(df_validos, genes_universe)
 cat(sprintf("Términos GO significativos (FDR < %.2f) en modelo real: %d\n", UMBRAL_FDR, terminos_reales))
 
 # =============================================================================
-# 4. ITERACIONES DEL MODELO NULO
+# 4. ITERACIONES DEL MODELO NULO (EN PARALELO)
 # =============================================================================
-terminos_nulos <- numeric(N_PERMUTACIONES)
-set.seed(SEMILLA)
+cat(sprintf("\nCalculando enriquecimiento para %d permutaciones en paralelo...\n", N_PERMUTACIONES))
 
-cat(sprintf("\nCalculando enriquecimiento para %d permutaciones...\n", N_PERMUTACIONES))
+# Configurar cluster paralelo (usando todos los núcleos menos 1)
+n_cores <- max(1, parallel::detectCores() - 1)
+cl <- makeCluster(n_cores)
+registerDoParallel(cl)
 
-for (i in 1:N_PERMUTACIONES) {
+# Exportar variables y paquetes necesarios a los workers
+terminos_nulos <- foreach(i = 1:N_PERMUTACIONES, .combine = c, .packages = c("clusterProfiler", "org.Hs.eg.db")) %dopar% {
+  set.seed(SEMILLA + i)
   # Crear copia y permutar aleatoriamente las etiquetas de los clústeres
   df_permutado <- df_validos
   df_permutado$Cluster_Final <- sample(df_permutado$Cluster_Final)
   
   # Calcular enriquecimiento
-  terminos_nulos[i] <- calcular_enriquecimiento(df_permutado, genes_universe)
-  
-  cat(sprintf("Permutación %d/%d: %d términos significativos\n", i, N_PERMUTACIONES, terminos_nulos[i]))
+  res_iter <- calcular_enriquecimiento(df_permutado, genes_universe)
+  res_iter
 }
+
+stopCluster(cl)
+
+cat("Permutaciones finalizadas.\n")
 
 # =============================================================================
 # 5. RESULTADOS Y EXPORTACIÓN

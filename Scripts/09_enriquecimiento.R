@@ -16,9 +16,7 @@ source(here::here("Scripts", "00_funciones_globales.R"))
 ORGANISMO         <- "hsapiens"     # Homo sapiens
 FUENTES           <- c("GO:BP",     # Gene Ontology — Biological Process
                        "GO:MF",    # Gene Ontology — Molecular Function
-                       "GO:CC",    # Gene Ontology — Cellular Component
-                       "KEGG",     # KEGG Pathways
-                       "REAC")     # Reactome Pathways
+                       "GO:CC")    # Gene Ontology — Cellular Component
 P_VALOR_UMBRAL    <- 0.05           # umbral de significancia (FDR corregido)
 MIN_GENES_TERMINO <- 3              # mínimo de genes del cluster en el término
 MAX_TERMINOS_PLOT <- 15             # top N términos a graficar por cluster
@@ -197,8 +195,6 @@ for (cid in clusters_unicos) {
     N_GO_BP           = if (!is.null(res_cid)) sum(res_cid$Fuente == "GO:BP") else 0,
     N_GO_MF           = if (!is.null(res_cid)) sum(res_cid$Fuente == "GO:MF") else 0,
     N_GO_CC           = if (!is.null(res_cid)) sum(res_cid$Fuente == "GO:CC") else 0,
-    N_KEGG            = if (!is.null(res_cid)) sum(res_cid$Fuente == "KEGG")  else 0,
-    N_Reactome        = if (!is.null(res_cid)) sum(res_cid$Fuente == "REAC")  else 0,
     Top_Termino       = if (!is.null(res_cid) && nrow(res_cid) > 0)
       res_cid$Termino[1] else "—",
     stringsAsFactors = FALSE
@@ -228,9 +224,7 @@ if (!dir.exists(dir_graficos)) dir.create(dir_graficos, recursive = TRUE)
 paleta_fuentes <- c(
   "GO:BP" = "#4DAF4A",
   "GO:MF" = "#377EB8",
-  "GO:CC" = "#984EA3",
-  "KEGG"  = "#FF7F00",
-  "REAC"  = "#E41A1C"
+  "GO:CC" = "#984EA3"
 )
 
 clusters_con_resultados <- names(Filter(Negate(is.null), resultados_todos))

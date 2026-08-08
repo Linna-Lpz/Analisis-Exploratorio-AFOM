@@ -14,9 +14,9 @@ paquetes_cran <- c(
   # Infraestructura y rutas
   "here",
   # Árboles filogenéticos y distancias
-  "ape", "TreeDist",
+  "ape", "TreeDist", "phangorn",
   # Clustering
-  "cluster", "clValid", "mstknnclust", "igraph",
+  "cluster", "clValid", "mstknnclust", "igraph", "mclust",
   # Reducción dimensional
   "uwot",       # UMAP
   "vegan",      # nMDS
@@ -31,8 +31,8 @@ paquetes_cran <- c(
   "httr", "jsonlite",
   # Enriquecimiento funcional (CRAN)
   "gprofiler2",
-  # Utilidades
-  "digest"
+  # Utilidades y Paralelización
+  "digest", "doParallel", "foreach"
 )
 
 nuevos_cran <- paquetes_cran[!(paquetes_cran %in% installed.packages()[, "Package"])]

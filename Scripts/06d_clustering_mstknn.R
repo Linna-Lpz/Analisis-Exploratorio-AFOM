@@ -149,6 +149,15 @@ guardar_red_png <- function(mst_resultado, ruta_png, titulo) {
 set.seed(2)
 
 escenarios <- list(
+  list(nombre      = "Auto (sin suggested.k)",
+       nombre_corto = "auto",
+       suggested_k = NULL),
+  list(nombre      = "suggested.k = 3",
+       nombre_corto = "k3",
+       suggested_k = 3),
+  list(nombre      = "suggested.k = 5",
+       nombre_corto = "k5",
+       suggested_k = 5),
   list(nombre      = "suggested.k = 7",
        nombre_corto = "k7",
        suggested_k = 7),
@@ -367,7 +376,7 @@ if (length(resultados_escenarios) > 0) {
   cat("AVISO: No se generaron redes PNG (todos los escenarios fallaron).\n")
 }
 
-ruta_excel <- file.path(DIR_RESULTS, "mstknn_resultados2.xlsx")
+ruta_excel <- file.path(DIR_RESULTS, "mstknn_resultados.xlsx")
 saveWorkbook(wb, ruta_excel, overwrite = TRUE)
 
 cat("Resultados completos guardados en:", ruta_excel, "\n")
