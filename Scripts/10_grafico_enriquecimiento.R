@@ -6,6 +6,9 @@ library(ggplot2)
 library(dplyr)
 library(stringr)
 
+source(here::here("Scripts", "config.R"))
+source(here::here("Scripts", "00_funciones_globales.R"))
+
 algoritmo <- if(exists("ALGORITMO_DOWNSTREAM")) ALGORITMO_DOWNSTREAM else "AUTO"
 
 # 1. Cargar los datos

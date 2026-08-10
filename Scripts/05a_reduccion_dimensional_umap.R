@@ -148,19 +148,26 @@ p_kmeans <- graficar_clustering(
   subtitulo   = sprintf("k = %s  |  n = %d árboles", k_km, nrow(coords_df))
 )
 
-p_pam <- graficar_clustering(
-  df          = coords_df,
-  col_cluster = "Cluster_PAM",
-  titulo      = "PAM (K-Medoids)",
-  subtitulo   = sprintf("k = %s  |  n = %d árboles", k_pam, nrow(coords_df))
-)
-
 p_clara <- graficar_clustering(
   df          = coords_df,
   col_cluster = "Cluster_CLARA",
   titulo      = "CLARA",
   subtitulo   = sprintf("k = %s  |  n = %d árboles", k_cl, nrow(coords_df))
 )
+
+graficos_individuales <- list(
+  list(plot = p_kmeans, nombre = "umap_kmeans"),
+  list(plot = p_pam,    nombre = "umap_pam"),
+  list(plot = p_clara,  nombre = "umap_clara")
+)
+
+for (g in graficos_individuales) {
+  if (!is.null(g$plot)) {
+    ruta_g <- file.path(DIR_RESULTS, paste0(g$nombre, "_", NOMBRE_BDD, ".png"))
+    ggsave(ruta_g, plot = g$plot, width = 8, height = 6, dpi = 300)
+    cat("Gráfico guardado:", ruta_g, "\n")
+  }
+}
 
 # =============================================================================
 # GRÁFICO UMAP — MST-KNN SUBDIVISIÓN ITERATIVA
