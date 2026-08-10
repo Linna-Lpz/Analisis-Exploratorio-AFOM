@@ -1,72 +1,104 @@
 # =============================================================================
 # 17_comparacion_ari_smith.R
 # =============================================================================
-
 library(here)
 library(ape)
 library(TreeDist)
 library(cluster)
 library(openxlsx)
 library(mclust)
+library(mstknnclust)
 
 source(here::here("Scripts", "config.R"))
 source(here::here("Scripts", "00_funciones_globales.R"))
 
-adjusted_rand_index <- function(x, y) {
-  x <- as.vector(x)
-  y <- as.vector(y)
-  tab <- table(x, y)
-  if (all(dim(tab) == c(1, 1))) return(1)
-  a <- sum(choose(tab, 2))
-  b <- sum(choose(rowSums(tab), 2)) - a
-  c <- sum(choose(colSums(tab), 2)) - a
-  d <- choose(sum(tab), 2) - a - b - c
-  ARI <- (a - (a + b) * (a + c) / (a + b + c + d)) /
-    ((a + b + a + c) / 2 - (a + b) * (a + c) / (a + b + c + d))
-  return(ARI)
-}
-
 cat("=== COMPARACION RF VS METRICAS DE SMITH (2020) ===\n")
 
-ruta_medioide <- file.path(DIR_RESULTS, paste0("ranking_medioide_", NOMBRE_BDD, ".xlsx"))
-ranking_df  <- read.xlsx(ruta_medioide, sheet = 1, startRow = 2)
-ids_324     <- as.character(ranking_df$nombre_arbol)
+# =============================================================================
+# 1. CARGAR LOS ARBOLES DEL CORE SET DESDE CACHE
+#    Generado en 02_filtro_arboles_medioide.R
+# =============================================================================
+ruta_cache_core_set <- file.path(DIR_CACHE, "conjunto_core_set.rds")
+if (!file.exists(ruta_cache_core_set))
+  stop("Falta: ", ruta_cache_core_set,
+       "\nEjecuta primero 02_filtro_arboles_medioide.R")
 
-archivos_bosque <- list.files(DIR_CACHE, pattern = "^bosque_.*\\.rds$", full.names = TRUE)
-bosque_rds <- archivos_bosque[which.min(file.size(archivos_bosque))]
-bosque_total <- readRDS(bosque_rds)
-bosque_324 <- bosque_total[names(bosque_total) %in% ids_324]
-bosque_324 <- bosque_324[!sapply(bosque_324, is.null)]
+bosque_324 <- readRDS(ruta_cache_core_set)
 class(bosque_324) <- "multiPhylo"
-rm(bosque_total); gc()
 
+cat(sprintf("Arboles cargados: %d\n", length(bosque_324)))
+
+# =============================================================================
+# 2. CALCULAR DISTANCIA DE SMITH (ClusteringInfoDistance)
+# =============================================================================
 cat("Calculando ClusteringInfoDistance...\n")
-matriz_smith <- ClusteringInfoDistance(bosque_324, normalize = TRUE)
+
+matriz_smith  <- ClusteringInfoDistance(bosque_324, normalize = TRUE)
 mat_smith_324 <- as.matrix(matriz_smith)
 
-ruta_cl_control <- file.path(DIR_RESULTS, paste0("control_324_clustering_", NOMBRE_BDD, ".xlsx"))
-asig_control <- read.xlsx(ruta_cl_control, sheet = "Asignaciones", startRow = 2)
+# Forzamos SIEMPRE los nombres reales de los arboles como rownames/colnames,
+# sin importar lo que haya devuelto ClusteringInfoDistance/as.matrix (que
+# puede traer indices numericos "1","2",... en vez de los nombres reales).
+# Esto asume que el orden de bosque_324 se preserva al calcular la distancia,
+# igual que se asume en el resto del pipeline (p. ej. con RobinsonFoulds).
+stopifnot(nrow(mat_smith_324) == length(bosque_324))
+rownames(mat_smith_324) <- names(bosque_324)
+colnames(mat_smith_324) <- names(bosque_324)
 
-k_optimo <- length(unique(asig_control$Cluster))
+# =============================================================================
+# 3. CLUSTERING CON MST-KNN SOBRE LA MATRIZ DE SMITH
+# =============================================================================
+cat("Clustering MST-KNN sobre matriz de Smith...\n")
 
 set.seed(42)
-res_clara_smith <- clara(mat_smith_324, k = k_optimo, metric = "euclidean", 
-                         samples = 50, sampsize = min(nrow(mat_smith_324), 40 + 2 * k_optimo), 
-                         keep.data = FALSE, rngR = TRUE)
+mst_res_smith <- mstknnclust::mst.knn(mat_smith_324)
+k_optimo_smith <- mst_res_smith$cnumber
+
+cat(sprintf("K optimo (Smith, mst-knn): %d\n", k_optimo_smith))
 
 asig_smith_df <- data.frame(
-  Arbol = as.character(1:nrow(mat_smith_324)),
-  Cluster_Smith = res_clara_smith$clustering,
+  Arbol         = names(mst_res_smith$cluster),
+  Cluster_Smith = as.integer(mst_res_smith$cluster),
   stringsAsFactors = FALSE
 )
 
-comparacion <- merge(asig_control, asig_smith_df, by="Arbol")
+# =============================================================================
+# 4. COMPARAR CONTRA EL CLUSTERING RF (control_324_clustering_....xlsx)
+# =============================================================================
+ruta_cl_control <- file.path(DIR_RESULTS, paste0("control_324_clustering_", NOMBRE_BDD, ".xlsx"))
+asig_control <- read.xlsx(ruta_cl_control, sheet = "Asignaciones", startRow = 2)
+
+# Cruce correcto: por nombre real de arbol (Arbol), no por indice numerico
+comparacion <- merge(asig_control, asig_smith_df, by = "Arbol")
+
+n_perdidos <- nrow(asig_control) - nrow(comparacion)
+if (n_perdidos != 0) {
+  warning(sprintf(
+    "%d arboles de asig_control no encontraron match en asig_smith_df. ",
+    n_perdidos
+  ))
+}
+
 cat("Tabla de comparacion:\n")
 print(table(comparacion$Cluster, comparacion$Cluster_Smith))
-ari_score <- adjustedRandIndex(comparacion$Cluster, comparacion$Cluster_Smith)
-cat("-> ARI entre RF y Smith (ClusteringInfoDistance):", round(ari_score, 4), "\n")
 
-resumen_ari <- data.frame(Metrica = "ARI", Valor = ari_score)
+ari_score <- adjustedRandIndex(comparacion$Cluster, comparacion$Cluster_Smith)
+cat("-> ARI entre RF (clusters=", length(unique(comparacion$Cluster)),
+    ") y Smith/mst-knn (clusters=", k_optimo_smith, "):",
+    round(ari_score, 4), "\n", sep = "")
+
+# =============================================================================
+# 5. EXPORTAR RESULTADOS
+# =============================================================================
+resumen_ari <- data.frame(
+  Metrica = c("ARI", "K_RF", "K_Smith_mstknn", "N_arboles_comparados"),
+  Valor   = c(ari_score,
+              length(unique(comparacion$Cluster)),
+              k_optimo_smith,
+              nrow(comparacion)),
+  stringsAsFactors = FALSE
+)
+
 wb <- createWorkbook()
 addWorksheet(wb, "ARI")
 writeData(wb, "ARI", resumen_ari)

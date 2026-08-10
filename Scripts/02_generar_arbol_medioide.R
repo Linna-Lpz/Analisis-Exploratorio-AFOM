@@ -40,84 +40,111 @@ cat("CORE_SET leído   :", CORE_SET, "especies\n")
 cat("Árboles esperados:", N_ARBOLES_ESP, "\n")
 
 # =============================================================================
-# LEER TODOS LOS ÁRBOLES Y CONTAR ESPECIES
+# CARGAR ÁRBOLES DEL CORE SET (DESDE CACHÉ SI EXISTE)
 # =============================================================================
-cat("\n=== CONTANDO ESPECIES POR ÁRBOL ===\n")
+ruta_cache_core_set <- file.path(DIR_CACHE, "conjunto_core_set.rds")
 
-zip_files <- list.files(
-  file.path(DIR_INPUT, CARPETA_ARBOLES),
-  pattern    = "\\.zip$",
-  full.names = TRUE
-)
-cat("ZIPs encontrados:", length(zip_files), "\n")
-
-conteo <- data.frame(
-  ruta       = zip_files,
-  nombre     = basename(zip_files),
-  n_especies = NA_integer_,
-  stringsAsFactors = FALSE
-)
-
-for (i in seq_along(zip_files)) {
-  tryCatch({
-    archivos_internos <- unzip(zip_files[i], list = TRUE)$Name
-    rootree_file <- archivos_internos[
-      grepl(EXTENSION_ARBOLES, archivos_internos, fixed = TRUE)
-    ][1]
-    if (!is.na(rootree_file)) {
-      arbol <- read.tree(unz(zip_files[i], rootree_file))
-      conteo$n_especies[i] <- length(arbol$tip.label)
-    }
-  }, error = function(e) {
-    message("  Error en: ", basename(zip_files[i]), " — ", e$message)
-  })
-}
-
-cat("Árboles leídos correctamente:",
-    sum(!is.na(conteo$n_especies)), "/", nrow(conteo), "\n")
-
-# =============================================================================
-# FILTRAR ÁRBOLES CON EXACTAMENTE CORE_SET ESPECIES
-# =============================================================================
-cat("\n=== FILTRANDO ÁRBOLES CON", CORE_SET, "ESPECIES ===\n")
-
-seleccionados <- conteo[
-  !is.na(conteo$n_especies) & conteo$n_especies == CORE_SET,
-]
-cat("Árboles encontrados con", CORE_SET, "especies:", nrow(seleccionados), "\n")
-
-if (nrow(seleccionados) != N_ARBOLES_ESP) {
-  warning(
-    "Se esperaban ", N_ARBOLES_ESP, " árboles según el Excel, ",
-    "pero se encontraron ", nrow(seleccionados), "."
+if (file.exists(ruta_cache_core_set)) {
+  
+  cat("\n=== CARGANDO CONJUNTO CORE SET DESDE CACHÉ ===\n")
+  arboles <- readRDS(ruta_cache_core_set)
+  cat("Árboles cargados desde caché:", length(arboles), "\n")
+  
+  if (length(arboles) != N_ARBOLES_ESP) {
+    warning(
+      "El conjunto en caché tiene ", length(arboles), " árboles, ",
+      "pero el Excel espera ", N_ARBOLES_ESP, ". ",
+      "Si cambiaron los datos de entrada, elimina el archivo de caché:\n  ",
+      ruta_cache_core_set
+    )
+  }
+  
+} else {
+  
+  # ===========================================================================
+  # LEER TODOS LOS ÁRBOLES Y CONTAR ESPECIES
+  # ===========================================================================
+  cat("\n=== CONTANDO ESPECIES POR ÁRBOL ===\n")
+  
+  zip_files <- list.files(
+    file.path(DIR_INPUT, CARPETA_ARBOLES),
+    pattern    = "\\.zip$",
+    full.names = TRUE
   )
+  cat("ZIPs encontrados:", length(zip_files), "\n")
+  
+  conteo <- data.frame(
+    ruta       = zip_files,
+    nombre     = basename(zip_files),
+    n_especies = NA_integer_,
+    stringsAsFactors = FALSE
+  )
+  
+  for (i in seq_along(zip_files)) {
+    tryCatch({
+      archivos_internos <- unzip(zip_files[i], list = TRUE)$Name
+      rootree_file <- archivos_internos[
+        grepl(EXTENSION_ARBOLES, archivos_internos, fixed = TRUE)
+      ][1]
+      if (!is.na(rootree_file)) {
+        arbol <- read.tree(unz(zip_files[i], rootree_file))
+        conteo$n_especies[i] <- length(arbol$tip.label)
+      }
+    }, error = function(e) {
+      message("  Error en: ", basename(zip_files[i]), " — ", e$message)
+    })
+  }
+  
+  cat("Árboles leídos correctamente:",
+      sum(!is.na(conteo$n_especies)), "/", nrow(conteo), "\n")
+  
+  # ===========================================================================
+  # FILTRAR ÁRBOLES CON EXACTAMENTE CORE_SET ESPECIES
+  # ===========================================================================
+  cat("\n=== FILTRANDO ÁRBOLES CON", CORE_SET, "ESPECIES ===\n")
+  
+  seleccionados <- conteo[
+    !is.na(conteo$n_especies) & conteo$n_especies == CORE_SET,
+  ]
+  cat("Árboles encontrados con", CORE_SET, "especies:", nrow(seleccionados), "\n")
+  
+  if (nrow(seleccionados) != N_ARBOLES_ESP) {
+    warning(
+      "Se esperaban ", N_ARBOLES_ESP, " árboles según el Excel, ",
+      "pero se encontraron ", nrow(seleccionados), "."
+    )
+  }
+  
+  if (nrow(seleccionados) == 0) {
+    cat("\nDistribución de especies disponibles:\n")
+    print(sort(table(conteo$n_especies), decreasing = TRUE))
+    stop("No se encontraron árboles con ", CORE_SET, " especies. ",
+         "Revisa el archivo Excel o el directorio de entrada.")
+  }
+  
+  # ===========================================================================
+  # CARGAR EN MEMORIA LOS ÁRBOLES SELECCIONADOS
+  # ===========================================================================
+  cat("\n=== CARGANDO ÁRBOLES SELECCIONADOS EN MEMORIA ===\n")
+  
+  arboles_raw <- leer_bosque_zip(
+    directorio  = file.path(DIR_INPUT, CARPETA_ARBOLES),
+    ext_interna = EXTENSION_ARBOLES,
+    dir_cache = DIR_CACHE
+  )
+  
+  # Conservar solo los árboles cuyo nombre de ZIP está en los seleccionados
+  nombres_seleccionados <- tools::file_path_sans_ext(seleccionados$nombre)
+  arboles <- arboles_raw[names(arboles_raw) %in% nombres_seleccionados]
+  arboles <- arboles[!sapply(arboles, is.null)]
+  class(arboles) <- "multiPhylo"
+  
+  cat("Árboles cargados para el análisis:", length(arboles), "\n")
+  
+  # --- Guardar en caché el conjunto filtrado con el core set de especies ---
+  saveRDS(arboles, ruta_cache_core_set)
+  cat("Conjunto core set guardado en caché:", ruta_cache_core_set, "\n")
 }
-
-if (nrow(seleccionados) == 0) {
-  cat("\nDistribución de especies disponibles:\n")
-  print(sort(table(conteo$n_especies), decreasing = TRUE))
-  stop("No se encontraron árboles con ", CORE_SET, " especies. ",
-       "Revisa el archivo Excel o el directorio de entrada.")
-}
-
-# =============================================================================
-# CARGAR EN MEMORIA LOS ÁRBOLES SELECCIONADOS
-# =============================================================================
-cat("\n=== CARGANDO ÁRBOLES SELECCIONADOS EN MEMORIA ===\n")
-
-arboles_raw <- leer_bosque_zip(
-  directorio  = file.path(DIR_INPUT, CARPETA_ARBOLES),
-  ext_interna = EXTENSION_ARBOLES,
-  dir_cache = DIR_CACHE
-)
-
-# Conservar solo los árboles cuyo nombre de ZIP está en los seleccionados
-nombres_seleccionados <- tools::file_path_sans_ext(seleccionados$nombre)
-arboles <- arboles_raw[names(arboles_raw) %in% nombres_seleccionados]
-arboles <- arboles[!sapply(arboles, is.null)]
-class(arboles) <- "multiPhylo"
-
-cat("Árboles cargados para el análisis:", length(arboles), "\n")
 
 # =============================================================================
 # CALCULAR MATRIZ DE DISTANCIAS Y ENCONTRAR EL MEDIOIDE

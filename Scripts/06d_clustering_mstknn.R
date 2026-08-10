@@ -154,16 +154,7 @@ escenarios <- list(
        suggested_k = NULL),
   list(nombre      = "suggested.k = 3",
        nombre_corto = "k3",
-       suggested_k = 3),
-  list(nombre      = "suggested.k = 5",
-       nombre_corto = "k5",
-       suggested_k = 5),
-  list(nombre      = "suggested.k = 7",
-       nombre_corto = "k7",
-       suggested_k = 7),
-  list(nombre      = "suggested.k = 10",
-       nombre_corto = "k10",
-       suggested_k = 10)
+       suggested_k = 3)
 )
 
 `%||%` <- function(a, b) if (!is.null(a)) a else b

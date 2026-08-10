@@ -19,9 +19,9 @@ ESPECIE       <- 9606   # 9606 = Homo sapiens (taxid NCBI)
 
 # =============================================================================
 # LEER ASIGNACIONES DEL EXCEL DE COORDENADAS PCA
-#    (ya tiene Arbol + todas las columnas de clustering)
+#    (Se actualiza primero con las subdivisiones iterativas)
 # =============================================================================
-cat("=== CARGANDO ASIGNACIONES ===\n")
+cat("=== CARGANDO Y ACTUALIZANDO ASIGNACIONES ===\n")
 
 ruta_pca_excel <- file.path(DIR_RESULTS,
                             paste0("pca_coordenadas_", NOMBRE_BDD, ".xlsx"))
@@ -31,14 +31,39 @@ if (!file.exists(ruta_pca_excel)) {
        "\nEjecuta primero el script 05d_reduccion_dimensional_PCA.R")
 }
 
-# Leer solo columna Arbol + columnas de clustering (saltar PCs)
-hojas_pca    <- getSheetNames(ruta_pca_excel)
-coords_full  <- read.xlsx(ruta_pca_excel,
+# Leer coordenadas (que pueden no tener las columnas iterativas si 05d corrió antes)
+wb_pca       <- loadWorkbook(ruta_pca_excel)
+coords_full  <- read.xlsx(wb_pca,
                           sheet    = "Coordenadas_PCA",
                           startRow = 2,
                           colNames = TRUE)
 
-# Identificar columnas de clustering (todas las que empiezan con "Cluster_")
+# 1. Eliminar columnas de cluster antiguas para evitar duplicados (.x, .y)
+cols_no_cluster <- grep("^Cluster_", colnames(coords_full), invert = TRUE, value = TRUE)
+coords_base <- coords_full[, cols_no_cluster, drop = FALSE]
+
+# 2. Refrescar todas las asignaciones desde los archivos de resultados
+res_unidos <- unir_etiquetas_clustering(coords_base, DIR_RESULTS)
+coords_full <- res_unidos$coords_df
+
+# 3. Guardar las coordenadas actualizadas de vuelta en el Excel
+removeWorksheet(wb_pca, "Coordenadas_PCA")
+wb_pca <- agregar_hoja_formateada(
+  wb           = wb_pca,
+  nombre_hoja  = "Coordenadas_PCA",
+  titulo_tabla = paste0("Coordenadas PCA — ", NOMBRE_BDD),
+  datos        = coords_full,
+  anchos_col   = "auto"
+)
+# Reordenar para que Coordenadas_PCA quede de primera
+hojas_actuales <- names(wb_pca)
+idx_coordenadas <- which(hojas_actuales == "Coordenadas_PCA")
+worksheetOrder(wb_pca) <- c(idx_coordenadas, setdiff(seq_along(hojas_actuales), idx_coordenadas))
+saveWorkbook(wb_pca, ruta_pca_excel, overwrite = TRUE)
+
+cat("Excel de coordenadas PCA actualizado con asignaciones recientes.\n")
+
+# Extraer columnas necesarias para HGNC
 cols_cluster <- grep("^Cluster_", colnames(coords_full), value = TRUE)
 cols_usar    <- c("Arbol", cols_cluster)
 
@@ -236,14 +261,24 @@ cat("Hoja 'Genes_Agrupados' agregada a:", ruta_pca_excel, "\n")
 # =============================================================================
 cat("\n=== EXPORTANDO LISTAS POR CLUSTER ===\n")
 
-# Columna de clustering a usar para las listas
-# Por defecto usa CLARA iterativa si existe, si no usa CLARA óptimo
-col_lista <- if ("Cluster_KMeans_Iter" %in% cols_cluster) "Cluster_KMeans_Iter" else
-  if ("Cluster_CLARA"       %in% cols_cluster) "Cluster_CLARA"       else
-    if ("Cluster_KMeans_Iter"  %in% cols_cluster) "Cluster_KMeans_Iter"  else
-      if ("Cluster_KMeans"      %in% cols_cluster) "Cluster_KMeans"      else
-        cols_cluster[1]
+algoritmo <- if(exists("ALGORITMO_DOWNSTREAM")) ALGORITMO_DOWNSTREAM else "AUTO"
 
+col_lista <- if (algoritmo == "MST-kNN" && "Cluster_MSTKNN_Iter" %in% cols_cluster) {
+  "Cluster_MSTKNN_Iter"
+} else if (algoritmo == "K-Means" && "Cluster_KMeans_Iter" %in% cols_cluster) {
+  "Cluster_KMeans_Iter"
+} else if (algoritmo == "CLARA" && "Cluster_CLARA_Iter" %in% cols_cluster) {
+  "Cluster_CLARA_Iter"
+} else if (algoritmo == "PAM" && "Cluster_PAM" %in% cols_cluster) {
+  "Cluster_PAM"
+} else {
+  # Fallback si está en AUTO o no se encuentra la columna iterada
+  if ("Cluster_KMeans_Iter" %in% cols_cluster) "Cluster_KMeans_Iter" else
+    if ("Cluster_MSTKNN_Iter" %in% cols_cluster) "Cluster_MSTKNN_Iter" else
+      cols_cluster[1]
+}
+
+cat(sprintf("Algoritmo objetivo: %s\n", algoritmo))
 cat(sprintf("Columna de clustering para listas: %s\n", col_lista))
 
 clusters_unicos <- sort(unique(na.omit(genes_df[[col_lista]])))
@@ -299,7 +334,7 @@ wb_listas <- agregar_hoja_formateada(
 )
 
 ruta_listas <- file.path(DIR_RESULTS,
-                         paste0("hgnc_listas_por_cluster_", NOMBRE_BDD, ".xlsx"))
+                         paste0("hgnc_listas_", gsub("-","", tolower(algoritmo)), "_", NOMBRE_BDD, ".xlsx"))
 saveWorkbook(wb_listas, ruta_listas, overwrite = TRUE)
 
 cat("Listas por cluster guardadas en:", ruta_listas, "\n")

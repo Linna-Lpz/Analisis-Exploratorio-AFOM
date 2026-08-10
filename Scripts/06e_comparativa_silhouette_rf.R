@@ -80,9 +80,9 @@ cat(sprintf("  CLARA: k=%d, n=%d\n", k_clara, sum(!is.na(asig_clara))))
 
 # ---- 2d. MST-kNN (desde Excel de resultados) --------------------------------
 cat("Leyendo asignaciones MST-kNN...\n")
-ruta_mst_xlsx <- file.path(DIR_RESULTS, "mstknn_resultados2.xlsx")
+ruta_mst_xlsx <- file.path(DIR_RESULTS, "mstknn_resultados.xlsx")
 if (!file.exists(ruta_mst_xlsx)) {
-  stop("No se encontró mstknn_resultados2.xlsx. Ejecuta primero 06d_clustering_mstknn.R")
+  stop("No se encontró mstknn_resultados.xlsx. Ejecuta primero 06d_clustering_mstknn.R")
 }
 mst_asig_df <- read.xlsx(ruta_mst_xlsx, sheet = "Asignaciones", startRow = 2)
 

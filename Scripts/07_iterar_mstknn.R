@@ -43,8 +43,8 @@ dist_rf         <- as.dist(matriz_cuadrada)
 cat(sprintf("Matriz RF: %d x %d\n", nrow(matriz_cuadrada), ncol(matriz_cuadrada)))
 
 # Asignaciones MST-kNN (mejor escenario)
-ruta_mst_xlsx <- file.path(DIR_RESULTS, "mstknn_resultados2.xlsx")
-if (!file.exists(ruta_mst_xlsx)) stop("No se encontró mstknn_resultados2.xlsx")
+ruta_mst_xlsx <- file.path(DIR_RESULTS, "mstknn_resultados.xlsx")
+if (!file.exists(ruta_mst_xlsx)) stop("No se encontró mstknn_resultados.xlsx")
 
 asig_inicial <- read.xlsx(ruta_mst_xlsx, sheet = "Asignaciones", startRow = 2,
                           colNames = TRUE)

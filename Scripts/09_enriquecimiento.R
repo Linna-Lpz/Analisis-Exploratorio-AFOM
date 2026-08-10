@@ -20,10 +20,22 @@ FUENTES           <- c("GO:BP",     # Gene Ontology — Biological Process
 P_VALOR_UMBRAL    <- 0.05           # umbral de significancia (FDR corregido)
 MIN_GENES_TERMINO <- 3              # mínimo de genes del cluster en el término
 MAX_TERMINOS_PLOT <- 15             # top N términos a graficar por cluster
+MIN_GENES_CLUSTER <- 15             # mínimo de genes requeridos en el cluster para ser analizado
+
+algoritmo <- if(exists("ALGORITMO_DOWNSTREAM")) ALGORITMO_DOWNSTREAM else "AUTO"
 
 # Columna de clustering a analizar
-# Prioriza CLARA iterativa, luego CLARA óptimo
-COL_CLUSTER <- "Cluster_KMeans_Iter" # otra op Cluster_Kmeans_Iter
+COL_CLUSTER <- if (algoritmo == "MST-kNN") {
+  "Cluster_MSTKNN_Iter"
+} else if (algoritmo == "K-Means") {
+  "Cluster_KMeans_Iter"
+} else if (algoritmo == "CLARA") {
+  "Cluster_CLARA_Iter"
+} else if (algoritmo == "PAM") {
+  "Cluster_PAM"
+} else {
+  "Cluster_KMeans_Iter"
+}
 
 # =============================================================================
 # 1. CARGAR TABLA DE GENES AGRUPADOS
@@ -167,21 +179,26 @@ for (cid in clusters_unicos) {
     !is.na(genes_df[[COL_CLUSTER]]) & genes_df[[COL_CLUSTER]] == cid
   ]
   
-  if (file.exists(ruta_cache_cid)) {
-    cat(sprintf("  Cluster %s: cargando desde caché.\n", cid))
-    res_cid <- readRDS(ruta_cache_cid)
+  if (sum(!is.na(simbolos_cid)) < MIN_GENES_CLUSTER) {
+    cat(sprintf("  Cluster %s: Omitido (n=%d < %d genes)\n", cid, sum(!is.na(simbolos_cid)), MIN_GENES_CLUSTER))
+    res_cid <- NULL
   } else {
-    res_cid <- enriquecer_cluster(
-      simbolos    = simbolos_cid,
-      cluster_id  = cid,
-      organismo   = ORGANISMO,
-      fuentes     = FUENTES,
-      p_umbral    = P_VALOR_UMBRAL,
-      min_genes   = MIN_GENES_TERMINO,
-      bg_universe = universo_hgnc
-    )
-    saveRDS(res_cid, ruta_cache_cid)
-    Sys.sleep(0.3)  # pausa para no saturar la API
+    if (file.exists(ruta_cache_cid)) {
+      cat(sprintf("  Cluster %s: cargando desde caché.\n", cid))
+      res_cid <- readRDS(ruta_cache_cid)
+    } else {
+      res_cid <- enriquecer_cluster(
+        simbolos    = simbolos_cid,
+        cluster_id  = cid,
+        organismo   = ORGANISMO,
+        fuentes     = FUENTES,
+        p_umbral    = P_VALOR_UMBRAL,
+        min_genes   = MIN_GENES_TERMINO,
+        bg_universe = universo_hgnc
+      )
+      saveRDS(res_cid, ruta_cache_cid)
+      Sys.sleep(0.3)  # pausa para no saturar la API
+    }
   }
   
   resultados_todos[[as.character(cid)]] <- res_cid
@@ -217,7 +234,7 @@ cat(sprintf("Total términos significativos        : %d\n", nrow(resultados_df))
 # =============================================================================
 cat("\n=== GENERANDO GRÁFICOS ===\n")
 
-dir_graficos <- file.path(DIR_RESULTS, "enrichment_plots")
+dir_graficos <- file.path(DIR_RESULTS, paste0("enrichment_plots_", gsub("-","",tolower(algoritmo))))
 if (!dir.exists(dir_graficos)) dir.create(dir_graficos, recursive = TRUE)
 
 # Paleta por fuente
@@ -358,7 +375,7 @@ wb <- agregar_hoja_formateada(wb, "Parametros",
                               anchos_col = c(30, 40))
 
 ruta_excel <- file.path(DIR_RESULTS,
-                        paste0("enrichment_funcional_", NOMBRE_BDD, ".xlsx"))
+                        paste0("enrichment_funcional_", gsub("-","",tolower(algoritmo)), "_", NOMBRE_BDD, ".xlsx"))
 saveWorkbook(wb, ruta_excel, overwrite = TRUE)
 cat("Excel guardado:", ruta_excel, "\n")
 cat("\n=== COMPLETADO ===\n")

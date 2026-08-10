@@ -15,7 +15,8 @@ source(here("Scripts", "00_funciones_globales.R"))
 # Variable de Control Dinámico:
 # "AUTO" : El pipeline evaluará empíricamente los algoritmos y orquestará 
 #          los pasos siguientes (downstream) para el ganador (mejor Silhouette).
-# "MST-kNN", "CLARA", etc: Fuerza la ejecución downstream para ese algoritmo.
+# Alternativamente, puedes forzar el algoritmo de downstream usando uno de los siguientes:
+# "MST-kNN", "CLARA", "K-Means", "PAM"
 ALGORITMO_DOWNSTREAM <- "AUTO"
 
 # -- Pasos a ejecutar (TRUE = ejecutar, FALSE = saltar) --
@@ -30,12 +31,12 @@ PASOS_EJECUTAR <- list(
   paso_05c = TRUE,  # 05c — Clustering CLARA
   paso_05d = TRUE,  # 05d — Clustering MST-kNN
   paso_05e = TRUE,  # 05e — Comparativa Silhouette
-  paso_06a = TRUE,  # 06a — UMAP (Reducc. Dim.)
-  paso_06b = TRUE,  # 06b — t-SNE (Reducc. Dim.)
-  paso_06c = TRUE,  # 06c — PCA (Reducc. Dim.)
   
   # PASOS DOWNSTREAM (Dependen del algoritmo seleccionado o AUTO)
   paso_07  = TRUE,  # 07 — Iterar clustering
+  paso_06a = TRUE,  # 06a — UMAP (Reducc. Dim.)
+  paso_06b = TRUE,  # 06b — t-SNE (Reducc. Dim.)
+  paso_06c = TRUE,  # 06c — PCA (Reducc. Dim.)
   paso_08  = TRUE,  # 08 — Etiquetas HGNC
   paso_09  = TRUE,  # 09 — Enriquecimiento
   paso_10  = TRUE,  # 10 — Burbujas Enriquecimiento
@@ -60,10 +61,7 @@ PASOS_BASE <- list(
   paso_05b = list("05b — Clustering PAM",              "Scripts/06b_clustering_pam.R"),
   paso_05c = list("05c — Clustering CLARA",            "Scripts/06c_clustering_clara.R"),
   paso_05d = list("05d — Clustering MST-kNN",          "Scripts/06d_clustering_mstknn.R"),
-  paso_05e = list("05e — Comparativa Silhouette",      "Scripts/06e_comparativa_silhouette_rf.R"),
-  paso_06a = list("06a — UMAP (Reducc. Dim.)",         "Scripts/05a_reduccion_dimensional_umap.R"),
-  paso_06b = list("06b — t-SNE (Reducc. Dim.)",        "Scripts/05c_reduccion_dimensional_tSNE.R"),
-  paso_06c = list("06c — PCA (Reducc. Dim.)",          "Scripts/05d_reduccion_dimensional_PCA.R")
+  paso_05e = list("05e — Comparativa Silhouette",      "Scripts/06e_comparativa_silhouette_rf.R")
 )
 
 # ==============================================================================
@@ -190,31 +188,23 @@ if (!pipeline_interrumpido) {
   }
   
   # Seleccionar los scripts de downstream correspondientes al ganador
-  PASOS_DOWNSTREAM <- list()
+  # El script iterar se infiere con un switch para mantener el flujo unificado
+  script_iterar <- switch(ALGORITMO_DOWNSTREAM,
+                          "CLARA" = "Scripts/07_iterar_clara.R",
+                          "K-Means" = "Scripts/07_iterar_k-means.R",
+                          "PAM" = "Scripts/07_iterar_pam.R",
+                          "MST-kNN" = "Scripts/07_iterar_mstknn.R",
+                          "Scripts/07_iterar.R") # fallback por si acaso
   
-  if (ALGORITMO_DOWNSTREAM == "MST-kNN") {
-    PASOS_DOWNSTREAM <- list(
-      paso_07 = list("07 — Iterar MST-kNN",                  "Scripts/07_iterar_mstknn.R"),
-      paso_08 = list("08 — Etiquetas HGNC (MST-kNN)",        "Scripts/08b_etiquetas_mstknn.R"),
-      paso_09 = list("09 — Enriquecimiento (MST-kNN)",       "Scripts/09b_enriquecimiento_mstknn.R"),
-      paso_10 = list("10 — Burbujas Enriquecimiento",        "Scripts/10b_grafico_enriquecimiento_mstknn.R")
-    )
-  } else {
-    # Todos los demás algoritmos (CLARA, K-Means, PAM) comparten los mismos scripts downstream.
-    # El script iterar lo inferimos con un switch rápido para mantener los nombres.
-    script_iterar <- switch(ALGORITMO_DOWNSTREAM,
-                            "CLARA" = "Scripts/07_iterar_clara.R",
-                            "K-Means" = "Scripts/07_iterar_k-means.R",
-                            "PAM" = "Scripts/07_iterar_pam.R",
-                            "Scripts/07_iterar.R") # fallback por si acaso
-    
-    PASOS_DOWNSTREAM <- list(
-      paso_07 = list(paste("07 — Iterar", ALGORITMO_DOWNSTREAM),   script_iterar),
-      paso_08 = list(paste("08 — Etiquetas HGNC", ALGORITMO_DOWNSTREAM), "Scripts/08_etiquetas.R"),
-      paso_09 = list(paste("09 — Enriquecimiento", ALGORITMO_DOWNSTREAM), "Scripts/09_enriquecimiento.R"),
-      paso_10 = list("10 — Burbujas Enriquecimiento",              "Scripts/10_grafico_enriquecimiento.R")
-    )
-  }
+  PASOS_DOWNSTREAM <- list(
+    paso_07 = list(paste("07 — Iterar", ALGORITMO_DOWNSTREAM),   script_iterar),
+    paso_06a = list("06a — UMAP (Reducc. Dim.)",         "Scripts/05a_reduccion_dimensional_umap.R"),
+    paso_06b = list("06b — t-SNE (Reducc. Dim.)",        "Scripts/05c_reduccion_dimensional_tSNE.R"),
+    paso_06c = list("06c — PCA (Reducc. Dim.)",          "Scripts/05d_reduccion_dimensional_PCA.R"),
+    paso_08 = list(paste("08 — Etiquetas HGNC", ALGORITMO_DOWNSTREAM), "Scripts/08_etiquetas.R"),
+    paso_09 = list(paste("09 — Enriquecimiento", ALGORITMO_DOWNSTREAM), "Scripts/09_enriquecimiento.R"),
+    paso_10 = list(paste("10 — Burbujas Enriquecimiento", ALGORITMO_DOWNSTREAM), "Scripts/10_grafico_enriquecimiento.R")
+  )
   
   # Añadir Evaluación de Sesgo y Modelo Nulo Global si es que hay un downstream válido
   if (length(PASOS_DOWNSTREAM) > 0) {

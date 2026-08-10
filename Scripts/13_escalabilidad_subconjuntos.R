@@ -9,8 +9,7 @@ source(here::here("Scripts", "00_funciones_globales.R"))
 suppressPackageStartupMessages({
   library(phangorn)
   library(ape)
-  # pryr no está disponible para R 4.5; se usa gc() de base R en su lugar
-  library(cluster)
+  library(mstknnclust)
   library(uwot)
 })
 
@@ -34,12 +33,33 @@ cat("Se cargaron", length(todos_los_arboles), "árboles originales.\n")
 trees_species <- lapply(todos_los_arboles, function(arbol) arbol$tip.label)
 especies_globales <- sort(unique(unlist(trees_species)))
 
-# Función para registrar memoria (usando gc() de base R, sin pryr)
+# Función para registrar memoria (usando gc() de base R)
 registrar_memoria <- function() {
   gc_info <- gc(verbose = FALSE)
   # Suma celdas usadas de Ncells y Vcells, convierte a MB (1 celda = 8 bytes)
   mem_r <- sum(gc_info[, 2]) * 8 / (1024^2)
   return(as.numeric(mem_r))
+}
+
+# =============================================================================
+# Función de unión por especie ancla (tomada de 03_comparar_medioide...)
+# =============================================================================
+unir_por_ancla <- function(tree1, tree2) {
+  especies_comunes <- intersect(tree1$tip.label, tree2$tip.label)
+  if (length(especies_comunes) < 2) {
+    return(list(arbol = NULL, n_comunes = length(especies_comunes), ancla = NA, error = "Menos de 2 especies comunes"))
+  }
+  especie_ancla <- especies_comunes[1]
+  otras_comunes <- especies_comunes[especies_comunes != especie_ancla]
+  tree1_preparado <- drop.tip(tree1, otras_comunes)
+  posicion_final  <- which(tree1_preparado$tip.label == especie_ancla)
+  
+  arbol_final <- tryCatch({
+    resultado <- bind.tree(tree1_preparado, tree2, where = posicion_final)
+    collapse.singles(resultado)
+  }, error = function(e) { NULL })
+  
+  return(list(arbol = arbol_final, n_comunes = length(especies_comunes), ancla = especie_ancla, error = ifelse(is.null(arbol_final), "Error en bind.tree", NA)))
 }
 
 for (n_arboles in TAMANOS_PRUEBA) {
@@ -56,12 +76,20 @@ for (n_arboles in TAMANOS_PRUEBA) {
   cat("  1. Homogeneización...\n")
   t_inicio_homog <- Sys.time()
   mem_antes_homog <- registrar_memoria()
-  # Simplificación: Asumimos que se usa un wrapper para homogeneizar o lo simulamos
-  # para medir el costo de forzar especies en el árbol.
-  # (Si ya tienes una función `homogeneizar_arboles(arboles_muestra, especies_globales)` 
-  # úsala aquí. Por ahora, medimos un bucle rápido simulado si la función no está expuesta, 
-  # o simplemente omitimos si es muy complejo, pero idealmente lo integras)
-  Sys.sleep(1) # Reemplazar con llamado a la función real de injerto
+  
+  # Usar el primer árbol de la muestra como "pseudo-medioide" de referencia
+  tree1 <- arboles_muestra[[1]]
+  arboles_homogeneizados <- list()
+  arboles_homogeneizados[[1]] <- tree1
+  
+  for (i in 2:n_arboles) {
+    tree2 <- arboles_muestra[[i]]
+    res <- unir_por_ancla(tree1, tree2)
+    if (!is.null(res$arbol)) {
+      arboles_homogeneizados[[i]] <- res$arbol
+    }
+  }
+  
   t_fin_homog <- Sys.time()
   tiempo_homog <- as.numeric(difftime(t_fin_homog, t_inicio_homog, units = "secs"))
   
@@ -78,14 +106,22 @@ for (n_arboles in TAMANOS_PRUEBA) {
   t_fin_rf <- Sys.time()
   tiempo_rf <- as.numeric(difftime(t_fin_rf, t_inicio_rf, units = "secs"))
   
-  # 3. TIEMPO DE CLUSTERING (CLARA)
-  cat("  3. Clustering CLARA...\n")
-  t_inicio_clara <- Sys.time()
-  # simulamos una matriz de distancia aleatoria del tamaño N x N para medir CLARA
+  # 3. TIEMPO DE CLUSTERING (MST-kNN)
+  cat("  3. Clustering MST-kNN...\n")
+  t_inicio_mst <- Sys.time()
+  # simulamos una matriz de distancia aleatoria del tamaño N x N para medir MST-kNN
   matriz_simulada <- matrix(runif(n_arboles^2), nrow=n_arboles)
-  clara_res <- clara(matriz_simulada, k = 2, samples = 10, sampsize = min(n_arboles, 100))
-  t_fin_clara <- Sys.time()
-  tiempo_clara <- as.numeric(difftime(t_fin_clara, t_inicio_clara, units = "secs"))
+  matriz_simulada[lower.tri(matriz_simulada)] <- t(matriz_simulada)[lower.tri(matriz_simulada)]
+  diag(matriz_simulada) <- 0
+  rownames(matriz_simulada) <- paste0("T", 1:n_arboles)
+  colnames(matriz_simulada) <- paste0("T", 1:n_arboles)
+  
+  tryCatch({
+    mst_res <- mst.knn(distance.matrix = matriz_simulada)
+  }, error = function(e) { NULL })
+  
+  t_fin_mst <- Sys.time()
+  tiempo_mst <- as.numeric(difftime(t_fin_mst, t_inicio_mst, units = "secs"))
   
   # 4. TIEMPO UMAP
   cat("  4. UMAP...\n")
@@ -101,7 +137,7 @@ for (n_arboles in TAMANOS_PRUEBA) {
     N_Arboles = n_arboles,
     Tiempo_Homogeneizacion_s = tiempo_homog,
     Tiempo_Matriz_RF_s = tiempo_rf,
-    Tiempo_CLARA_s = tiempo_clara,
+    Tiempo_MSTkNN_s = tiempo_mst,
     Tiempo_UMAP_s = tiempo_umap,
     Memoria_Maxima_MB = mem_max
   ))
@@ -113,8 +149,3 @@ print(resultados_escalabilidad)
 ruta_salida <- file.path(DIR_RESULTS, "curvas_escalabilidad.csv")
 write.csv(resultados_escalabilidad, ruta_salida, row.names = FALSE)
 cat(sprintf("\nResultados guardados en: %s\n", ruta_salida))
-
-# Nota para el usuario: Este script es un esqueleto de medición.
-# Se deben reemplazar los 'Sys.sleep(1)' por los llamados reales a
-# las funciones del pipeline para obtener los valores empíricos exactos,
-# inyectando las matrices homogeneizadas correctamente.

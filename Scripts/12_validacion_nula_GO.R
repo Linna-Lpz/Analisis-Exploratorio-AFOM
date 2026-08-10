@@ -10,8 +10,7 @@ library(openxlsx)
 
 # Instalar/Cargar paquetes de enriquecimiento si no están
 suppressPackageStartupMessages({
-  library(clusterProfiler)
-  library(org.Hs.eg.db)
+  library(gprofiler2)
   library(doParallel)
   library(foreach)
 })
@@ -31,13 +30,43 @@ cat(sprintf("Permutaciones: %d | Semilla: %d\n", N_PERMUTACIONES, SEMILLA))
 # =============================================================================
 # 1. CARGAR DATOS REALES
 # =============================================================================
-ruta_genes <- file.path(DIR_CACHE, "mstknn_iter_genes_hgnc.rds")
-if (!file.exists(ruta_genes)) {
-  stop("No se encontró el rds de genes: ", ruta_genes)
+ruta_pca_excel <- file.path(DIR_RESULTS, paste0("pca_coordenadas_", NOMBRE_BDD, ".xlsx"))
+
+if (!file.exists(ruta_pca_excel)) {
+  stop("No se encontró el Excel PCA: ", ruta_pca_excel)
 }
 
-# Leer genes y clusters asignados
-df_genes <- readRDS(ruta_genes)
+hojas <- getSheetNames(ruta_pca_excel)
+if (!"Genes_Agrupados" %in% hojas) {
+  stop("No se encontró la hoja 'Genes_Agrupados' en el Excel PCA.")
+}
+
+df_genes <- read.xlsx(ruta_pca_excel, sheet = "Genes_Agrupados", startRow = 2, colNames = TRUE)
+
+# Determinar columna de cluster
+algoritmo <- if(exists("ALGORITMO_DOWNSTREAM")) ALGORITMO_DOWNSTREAM else "AUTO"
+COL_CLUSTER <- if (algoritmo == "MST-kNN") {
+  "Cluster_MSTKNN_Iter"
+} else if (algoritmo == "K-Means") {
+  "Cluster_KMeans_Iter"
+} else if (algoritmo == "CLARA") {
+  "Cluster_CLARA_Iter"
+} else if (algoritmo == "PAM") {
+  "Cluster_PAM"
+} else {
+  "Cluster_MSTKNN_Iter"
+}
+
+if (!COL_CLUSTER %in% colnames(df_genes)) {
+  cols_disponibles <- grep("^Cluster_", colnames(df_genes), value = TRUE)
+  if (length(cols_disponibles) > 0) {
+    COL_CLUSTER <- cols_disponibles[1]
+  } else {
+    stop("No hay columnas de cluster disponibles en Genes_Agrupados")
+  }
+}
+
+df_genes$Cluster_Final <- df_genes[[COL_CLUSTER]]
 df_validos <- df_genes[!is.na(df_genes$HGNC_Symbol) & !is.na(df_genes$Cluster_Final), ]
 genes_universe <- unique(df_validos$HGNC_Symbol)
 
@@ -47,38 +76,39 @@ cat(sprintf("Total de genes con símbolo HGNC para validación: %d\n", length(ge
 tamanos_reales <- table(df_validos$Cluster_Final)
 
 # =============================================================================
-# 2. DEFINIR FUNCIÓN DE ENRIQUECIMIENTO
+# 2. DEFINIR FUNCIÓN DE ENRIQUECIMIENTO (USANDO gprofiler2)
 # =============================================================================
 calcular_enriquecimiento <- function(df_datos, universo) {
-  # Filtrar clusters pequeños para acelerar
+  # Filtrar clusters pequeños para acelerar (usar n >= 15 igual que el script original de mst-knn si se desea, o 10)
   tamanos <- table(df_datos$Cluster_Final)
   clusters_validos <- names(tamanos)[tamanos >= 10]
-  df_filtrado <- df_datos[df_datos$Cluster_Final %in% clusters_validos, ]
+  
+  df_filtrado <- df_datos[df_datos$Cluster_Final %in% clusters_validos & !is.na(df_datos$HGNC_Symbol), ]
   
   if (nrow(df_filtrado) == 0) return(0)
   
+  # Preparar lista de queries (un vector de genes por cada clúster)
+  query_list <- split(df_filtrado$HGNC_Symbol, df_filtrado$Cluster_Final)
+  
   tryCatch({
-    res <- compareCluster(
-      geneCluster   = HGNC_Symbol ~ Cluster_Final,
-      data          = df_filtrado,
-      fun           = "enrichGO",
-      universe      = universo,
-      OrgDb         = org.Hs.eg.db,
-      keyType       = "SYMBOL",
-      ont           = "BP",
-      pAdjustMethod = "BH",
-      pvalueCutoff  = PVAL_CUTOFF,
-      qvalueCutoff  = QVAL_CUTOFF,
-      readable      = FALSE
+    resultado <- gost(
+      query              = query_list,
+      organism           = "hsapiens",
+      sources            = "GO:BP", # Validamos ontología biológica principal
+      correction_method  = "fdr",
+      user_threshold     = UMBRAL_FDR,
+      significant        = TRUE,
+      measure_underrepresentation = FALSE,
+      evcodes            = FALSE,
+      custom_bg          = universo
     )
     
-    if (!is.null(res) && nrow(as.data.frame(res)) > 0) {
-      df_res <- as.data.frame(res)
-      return(sum(df_res$p.adjust < UMBRAL_FDR))
+    if (!is.null(resultado) && !is.null(resultado$result) && nrow(resultado$result) > 0) {
+      return(nrow(resultado$result))
     }
     return(0)
   }, error = function(e) {
-    cat("  [!] Error en compareCluster:", e$message, "\n")
+    cat("  [!] Error en gost:", e$message, "\n")
     return(0)
   })
 }
@@ -101,7 +131,7 @@ cl <- makeCluster(n_cores)
 registerDoParallel(cl)
 
 # Exportar variables y paquetes necesarios a los workers
-terminos_nulos <- foreach(i = 1:N_PERMUTACIONES, .combine = c, .packages = c("clusterProfiler", "org.Hs.eg.db")) %dopar% {
+terminos_nulos <- foreach(i = 1:N_PERMUTACIONES, .combine = c, .packages = c("gprofiler2")) %dopar% {
   set.seed(SEMILLA + i)
   # Crear copia y permutar aleatoriamente las etiquetas de los clústeres
   df_permutado <- df_validos

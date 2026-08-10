@@ -314,9 +314,9 @@ cat("Scree plot guardado:", ruta_scree, "\n")
 # =============================================================================
 # GRÁFICO PCA — KMEANS SUBDIVISIÓN ITERATIVA
 # =============================================================================
-if ("Cluster_KMEANS_Iter" %in% colnames(coords_df)) {
+if ("Cluster_Kmeans_Iter" %in% colnames(coords_df)) {
   
-  n_iter <- length(unique(na.omit(coords_df$Cluster_KMEANS_Iter)))
+  n_iter <- length(unique(na.omit(coords_df$Cluster_Kmeans_Iter)))
   cat(sprintf("\n=== GENERANDO GRÁFICO KMEANS ITERATIVA (k=%d) ===\n", n_iter))
   
   # Paleta ampliada — hcl.colors para k grande
@@ -330,7 +330,7 @@ if ("Cluster_KMEANS_Iter" %in% colnames(coords_df)) {
   }
   
   p_iter <- ggplot(coords_df,
-                   aes(x = PC1, y = PC2, color = Cluster_KMEANS_Iter)) +
+                   aes(x = PC1, y = PC2, color = Cluster_Kmeans_Iter)) +
     geom_point(alpha = 0.6, size = 1.2) +
     scale_color_manual(values = paleta_iter,
                        name   = "Cluster",
@@ -360,7 +360,7 @@ if ("Cluster_KMEANS_Iter" %in% colnames(coords_df)) {
   cat("Gráfico KMEANS iterativa guardado:", ruta_iter, "\n")
   
 } else {
-  cat("Columna 'Cluster_KMEANS_Iter' no encontrada. Saltando gráfico iterativo.\n")
+  cat("Columna 'Cluster_Kmeans_Iter' no encontrada. Saltando gráfico iterativo.\n")
 }
 
 # =============================================================================

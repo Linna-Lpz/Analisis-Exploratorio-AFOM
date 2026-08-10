@@ -6,9 +6,11 @@ library(ggplot2)
 library(dplyr)
 library(stringr)
 
+algoritmo <- if(exists("ALGORITMO_DOWNSTREAM")) ALGORITMO_DOWNSTREAM else "AUTO"
+
 # 1. Cargar los datos
 ruta_excel <- file.path(DIR_RESULTS,
-                            paste0("enrichment_funcional_", NOMBRE_BDD, ".xlsx"))
+                            paste0("enrichment_funcional_", gsub("-","",tolower(algoritmo)), "_", NOMBRE_BDD, ".xlsx"))
 df_todos <- read.xlsx(ruta_excel, sheet = "Todos_los_Terminos", startRow = 2)
 
 # 2. Parámetros de filtrado
@@ -76,5 +78,5 @@ p_cruzado <- ggplot(df_plot, aes(x = Cluster, y = Termino_Corto)) +
   )
 
 # 5. Mostrar y guardar
-ruta_plot <- file.path(DIR_RESULTS, paste0("Grafico_Burbujas_Cruzado_",NOMBRE_BDD, ".png"))
+ruta_plot <- file.path(DIR_RESULTS, paste0("Grafico_Burbujas_Cruzado_", gsub("-","",tolower(algoritmo)), "_", NOMBRE_BDD, ".png"))
 ggsave(ruta_plot, plot = p_cruzado, width = 12, height = 8, dpi = 300)

@@ -1,7 +1,7 @@
 # =============================================================================
 # 14_verificacion_PC1_vs_hojas.R
 # PROPOSITO: Verificar si PC1 (93.29% varianza) captura cobertura taxonomica
-# o variabilidad topologica real.  Observacion 1.1 informe de tesis.
+# o variabilidad topologica real.
 # =============================================================================
 
 library(here)
@@ -9,12 +9,6 @@ library(ggplot2)
 
 source(here::here("Scripts", "config.R"))
 source(here::here("Scripts", "00_funciones_globales.R"))
-
-cat("=============================================================\n")
-cat(" VERIFICACION: PC1 vs. N de hojas originales por arbol\n")
-cat(" Observacion 1.1 - Retroalimentacion informe de tesis\n")
-cat("=============================================================\n\n")
-
 
 # =============================================================================
 # 1. SCORES DE PC1
@@ -120,12 +114,8 @@ cat(sprintf("  Rango hojas: [%d, %d] | SD=%.2f\n",
 
 
 # =============================================================================
-# 4. CORRELACION  <-- la linea que responde la Observacion 1.1
+# 4. CORRELACION
 # =============================================================================
-cat("\n=============================================================\n")
-cat(" RESULTADO PRINCIPAL\n")
-cat("=============================================================\n")
-
 r_pearson  <- NA_real_
 r_spearman <- NA_real_
 p_pearson  <- NA_real_
@@ -175,57 +165,7 @@ if (sd_hojas < 1e-10) {
 
 
 # =============================================================================
-# 5. TEXTO PARA SECCION 3.3.2 (LaTeX)
-# =============================================================================
-cat("\n=============================================================\n")
-cat(" TEXTO PARA INSERTAR EN SECCION 3.3.2 (copia y pega en .tex)\n")
-cat("=============================================================\n\n")
-
-if (!is.na(r_pearson)) {
-  r_abs      <- abs(r_pearson)
-  intensidad <- ifelse(r_abs >= 0.80, "alta",
-                ifelse(r_abs >= 0.50, "moderada", "baja"))
-  cola <- if (r_abs >= 0.80) {
-    paste0(
-      "Este resultado confirma que el eje principal ",
-      "act\\'{u}a como subrogado de la cobertura taxon\\'{o}mica en el bosque ",
-      "original; no obstante, dado que el \\textit{pipeline} opera ",
-      "\\'{i}ntegramente sobre el bosque injertado ---donde todos los ",
-      "\\'{a}rboles poseen exactamente 190 hojas---, la cobertura es constante ",
-      "y PC1 captura en dicho contexto variabilidad estructural pura."
-    )
-  } else {
-    paste0(
-      "Este resultado descarta que la concentraci\\'{o}n de varianza en PC1 ",
-      "sea un artefacto de la heterogeneidad taxon\\'{o}mica, reforzando la ",
-      "interpretaci\\'{o}n de que el eje principal refleja variabilidad ",
-      "topol\\'{o}gica real del bosque filogen\\'{e}tico."
-    )
-  }
-  cat(sprintf(paste0(
-    "Para descartar que el PC1 ---que absorbe el 93{,}29\\%% de la varianza ",
-    "total--- codifique simplemente la cobertura taxon\\'{o}mica original de ",
-    "cada \\'{a}rbol en lugar de informaci\\'{o}n topol\\'{o}gica, se ",
-    "calcul\\'{o} el coeficiente de correlaci\\'{o}n de Pearson entre el score ",
-    "de PC1 y el n\\'{u}mero de hojas originales de cada \\'{a}rbol (antes del ",
-    "injerto filogen\\'{e}tico). El coeficiente obtenido fue ",
-    "$r = %.4f$ (Spearman $\\\\rho = %.4f$), indicando una asociaci\\'{o}n %s. %s\n"),
-    r_pearson, r_spearman, intensidad, cola
-  ))
-} else {
-  cat(paste0(
-    "La correlaci\\'{o}n entre PC1 y la cobertura taxon\\'{o}mica original es ",
-    "matem\\'{a}ticamente indefinida en el bosque analizado, dado que el ",
-    "\\textit{pipeline} opera sobre el bosque injertado donde todos los ",
-    "\\'{a}rboles poseen exactamente 190 hojas. Por tanto, PC1 no puede ",
-    "ser un artefacto de cobertura.\n"
-  ))
-}
-cat("\n")
-
-
-# =============================================================================
-# 6. GRAFICO DE DISPERSION
+# 5. GRAFICO DE DISPERSION
 # =============================================================================
 if (!is.na(r_pearson)) {
   cat("--- [6] Generando grafico ---\n")
@@ -269,7 +209,7 @@ if (!is.na(r_pearson)) {
 
 
 # =============================================================================
-# 7. CSV RESUMEN
+# 6. CSV RESUMEN
 # =============================================================================
 cat("\n--- [7] Guardando CSV resumen ---\n")
 
@@ -297,4 +237,3 @@ write.csv(resumen, ruta_csv, row.names = FALSE)
 cat("  CSV guardado:", ruta_csv, "\n")
 
 cat("\n=== COMPLETADO ===\n")
-cat("Copia el coeficiente r a la seccion 3.3.2 junto al 93,29 %.\n")

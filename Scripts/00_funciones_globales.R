@@ -238,13 +238,15 @@ unir_etiquetas_clustering <- function(coords_df,
   archivos_metodos <- list(
     KMeans = file.path(dir_results, nombre_kmeans),
     PAM    = file.path(dir_results, nombre_pam),
-    CLARA  = file.path(dir_results, nombre_clara)
+    CLARA  = file.path(dir_results, nombre_clara),
+    MSTKNN = file.path(dir_results, "mstknn_resultados.xlsx") # Asumiendo este nombre para base
   )
   
   # --- K ÓPTIMO ---
   kmeans_asig <- leer_asignaciones_xlsx(archivos_metodos[["KMeans"]], "K-Means")
   pam_asig    <- leer_asignaciones_xlsx(archivos_metodos[["PAM"]],    "PAM")
   clara_asig  <- leer_asignaciones_xlsx(archivos_metodos[["CLARA"]],  "CLARA")
+  mstknn_asig <- leer_asignaciones_xlsx(archivos_metodos[["MSTKNN"]], "MST-kNN", nombre_hoja = "Asignaciones")
   
   if (!is.null(kmeans_asig)) {
     coords_df <- merge(coords_df, setNames(kmeans_asig, c("Arbol", "Cluster_KMeans")),
@@ -256,6 +258,10 @@ unir_etiquetas_clustering <- function(coords_df,
   }
   if (!is.null(clara_asig)) {
     coords_df <- merge(coords_df, setNames(clara_asig, c("Arbol", "Cluster_CLARA")),
+                       by = "Arbol", all.x = TRUE)
+  }
+  if (!is.null(mstknn_asig)) {
+    coords_df <- merge(coords_df, setNames(mstknn_asig, c("Arbol", "Cluster_MST-kNN")),
                        by = "Arbol", all.x = TRUE)
   }
   
@@ -357,6 +363,8 @@ unir_etiquetas_clustering <- function(coords_df,
       length(unique(na.omit(coords_df$Cluster_PAM)))         else NA,
     CLARA       = if ("Cluster_CLARA"       %in% colnames(coords_df))
       length(unique(na.omit(coords_df$Cluster_CLARA)))       else NA,
+    MSTKNN      = if ("Cluster_MST-kNN"     %in% colnames(coords_df))
+      length(unique(na.omit(coords_df$`Cluster_MST-kNN`)))   else NA,
     CLARA_Iter  = if ("Cluster_CLARA_Iter"  %in% colnames(coords_df))
       length(unique(na.omit(coords_df$Cluster_CLARA_Iter)))  else NA,
     KMeans_Iter = if ("Cluster_KMeans_Iter" %in% colnames(coords_df))

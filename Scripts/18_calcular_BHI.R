@@ -12,10 +12,36 @@ suppressPackageStartupMessages({
 
 cat("=== CALCULANDO BHI PARA MST-kNN ===\n")
 
-ruta_genes <- file.path(DIR_CACHE, "mstknn_iter_genes_hgnc.rds")
-if (!file.exists(ruta_genes)) stop("No se encuentra ", ruta_genes)
+ruta_pca_excel <- file.path(DIR_RESULTS, paste0("pca_coordenadas_", NOMBRE_BDD, ".xlsx"))
+if (!file.exists(ruta_pca_excel)) {
+  stop("No se encontró el Excel PCA: ", ruta_pca_excel)
+}
 
-df_genes <- readRDS(ruta_genes)
+df_genes <- read.xlsx(ruta_pca_excel, sheet = "Genes_Agrupados", startRow = 2, colNames = TRUE)
+
+algoritmo <- if(exists("ALGORITMO_DOWNSTREAM")) ALGORITMO_DOWNSTREAM else "AUTO"
+COL_CLUSTER <- if (algoritmo == "MST-kNN") {
+  "Cluster_MSTKNN_Iter"
+} else if (algoritmo == "K-Means") {
+  "Cluster_KMeans_Iter"
+} else if (algoritmo == "CLARA") {
+  "Cluster_CLARA_Iter"
+} else if (algoritmo == "PAM") {
+  "Cluster_PAM"
+} else {
+  "Cluster_MSTKNN_Iter"
+}
+
+if (!COL_CLUSTER %in% colnames(df_genes)) {
+  cols_disponibles <- grep("^Cluster_", colnames(df_genes), value = TRUE)
+  if (length(cols_disponibles) > 0) {
+    COL_CLUSTER <- cols_disponibles[1]
+  } else {
+    stop("No hay columnas de cluster disponibles en Genes_Agrupados")
+  }
+}
+
+df_genes$Cluster_Final <- df_genes[[COL_CLUSTER]]
 df_validos <- df_genes[!is.na(df_genes$HGNC_Symbol) & !is.na(df_genes$Cluster_Final), ]
 
 # Obtener mapeo de HGNC a GO

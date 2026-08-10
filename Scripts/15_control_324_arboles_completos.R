@@ -1,27 +1,5 @@
 # =============================================================================
 # 15_control_324_arboles_completos.R
-#
-# PROPOSITO (Observacion 1.2 del informe de tesis):
-#   Los 324 arboles con las 190 especies son un grupo de control exacto:
-#   no requieren ningun injerto. Se agrupa este subconjunto limpio,
-#   se corre enriquecimiento funcional sobre los clusteres resultantes
-#   y se reporta si la coherencia biologica aparece sin injerto.
-#
-# LOGICA DE INTERPRETACION:
-#   Resultado POSITIVO (terminos GO significativos) -> confirmacion definitiva
-#   Resultado NEGATIVO                              -> ambiguo (menor potencia
-#                                                     con 324 genes vs 15868)
-#
-# FUENTES (todo ya calculado):
-#   - ranking_medioide_OrthoMaM.xlsx -> IDs de los 324 arboles completos
-#   - cache/bosque_*.rds             -> arboles para recalcular RF 324x324
-#   - cache/hgnc_conversion.rds      -> mapeo NCBI -> HGNC (reutilizado)
-#
-# SALIDAS:
-#   - Resultados/control_324_clustering_OrthoMaM.xlsx
-#   - Resultados/control_324_enrichment_OrthoMaM.xlsx
-#   - Resultados/control_324_burbujas_OrthoMaM.png
-#   - Resultados/control_324_resumen_OrthoMaM.csv
 # =============================================================================
 
 library(here)
@@ -31,69 +9,50 @@ library(cluster)
 library(gprofiler2)
 library(openxlsx)
 library(ggplot2)
+library(mstknnclust)
 
 source(here::here("Scripts", "config.R"))
 source(here::here("Scripts", "00_funciones_globales.R"))
 
-cat("=============================================================\n")
-cat(" CONTROL: 324 arboles completos sin injerto\n")
-cat(" Observacion 1.2 - Retroalimentacion informe de tesis\n")
-cat("=============================================================\n\n")
-
+# Metodo de clustering a utilizar: "clara", "kmeans" o "mst-knn"
+METODO_CLUSTERING <- "mst-knn"
 
 # =============================================================================
-# 1. IDs DE LOS 324 ARBOLES COMPLETOS
+# 1. CARGAR CONJUNTO CORE SET (ARBOLES COMPLETOS) DESDE CACHE
+#    Generado en 02_filtro_arboles_medioide.R
 # =============================================================================
-cat("--- [1] Cargando IDs de los 324 arboles completos ---\n")
+cat("--- [1] Cargando conjunto core set (arboles completos) desde cache ---\n")
 
-ruta_medioide <- file.path(DIR_RESULTS,
-                           paste0("ranking_medioide_", NOMBRE_BDD, ".xlsx"))
-if (!file.exists(ruta_medioide))
-  stop("Falta: ", ruta_medioide, "\nEjecuta 02_generar_arbol_medioide.R")
+ruta_cache_core_set <- file.path(DIR_CACHE, "conjunto_core_set.rds")
+if (!file.exists(ruta_cache_core_set))
+  stop("Falta: ", ruta_cache_core_set,
+       "\nEjecuta primero 02_filtro_arboles_medioide.R")
 
-ranking_df  <- read.xlsx(ruta_medioide, sheet = 1, startRow = 2)
-ids_324     <- as.character(ranking_df$nombre_arbol)
-cat(sprintf("  %d arboles completos identificados\n", length(ids_324)))
-cat(sprintf("  Ejemplo ID: %s\n", ids_324[1]))
-
-
-# =============================================================================
-# 2. CARGAR BOSQUE Y EXTRAER SOLO LOS 324 ARBOLES
-#    Usamos el bosque original (sin injertar) para calcular RF limpio
-# =============================================================================
-cat("\n--- [2] Cargando bosque original y extrayendo subconjunto ---\n")
-
-archivos_bosque <- list.files(DIR_CACHE,
-                              pattern = "^bosque_.*\\.rds$",
-                              full.names = TRUE)
-if (length(archivos_bosque) == 0)
-  stop("No hay bosque en cache. Ejecuta el pipeline primero.")
-
-bosque_rds <- archivos_bosque[which.min(file.size(archivos_bosque))]
-cat(sprintf("  Cargando: %s (%.1f MB)\n",
-            basename(bosque_rds), file.size(bosque_rds) / 1e6))
-
-bosque_total <- readRDS(bosque_rds)
-cat(sprintf("  Total arboles en bosque: %d\n", length(bosque_total)))
-
-# Filtrar solo los 324 con todas las especies
-bosque_324 <- bosque_total[names(bosque_total) %in% ids_324]
-bosque_324 <- bosque_324[!sapply(bosque_324, is.null)]
+bosque_324 <- readRDS(ruta_cache_core_set)
 class(bosque_324) <- "multiPhylo"
-rm(bosque_total); gc(verbose = FALSE)
 
-cat(sprintf("  Arboles seleccionados: %d\n", length(bosque_324)))
+cat(sprintf("  Arboles cargados: %d\n", length(bosque_324)))
+cat(sprintf("  Ejemplo ID: %s\n", names(bosque_324)[1]))
 
-# Verificar que todos tienen 190 hojas
+# Guardamos los nombres reales para poder reasignarlos a la matriz RF
+# mas adelante, por si RobinsonFoulds() no los conserva como dimnames
+nombres_ids <- names(bosque_324)
+
+# Verificar que todos los arboles tienen el mismo numero de hojas (core set)
 n_hojas_ctrl <- sapply(bosque_324, function(t) length(t$tip.label))
-cat(sprintf("  Hojas por arbol: min=%d max=%d (deben ser todos 190)\n",
+cat(sprintf("  Hojas por arbol: min=%d max=%d (deben ser todas iguales)\n",
             min(n_hojas_ctrl), max(n_hojas_ctrl)))
 
+if (min(n_hojas_ctrl) != max(n_hojas_ctrl)) {
+  warning("Los arboles del conjunto core set no tienen todos el mismo numero ",
+          "de hojas. Revisa el cache: ", ruta_cache_core_set)
+}
+
 
 # =============================================================================
-# 3. CALCULAR MATRIZ RF 324x324
+# 2. CALCULAR MATRIZ RF 324x324
 # =============================================================================
-cat("\n--- [3] Calculando matriz RF 324x324 ---\n")
+cat("\n--- [2] Calculando matriz RF 324x324 ---\n")
 
 ruta_cache_324 <- file.path(DIR_CACHE, "matriz_rf_324.rds")
 
@@ -101,7 +60,7 @@ if (file.exists(ruta_cache_324)) {
   cat("  Matriz 324x324 encontrada en cache. Cargando...\n")
   mat_324 <- readRDS(ruta_cache_324)
 } else {
-  cat("  Calculando RF normalizado (puede tomar 1-2 min)...\n")
+  cat("  Calculando Distancia (puede tomar 1-2 min)...\n")
   t_mat <- system.time({
     dist_obj <- RobinsonFoulds(bosque_324, normalize = TRUE)
     mat_324  <- as.matrix(dist_obj)
@@ -116,11 +75,23 @@ cat(sprintf("  Rango valores: [%.4f, %.4f]\n",
             min(mat_324[upper.tri(mat_324)]),
             max(mat_324[upper.tri(mat_324)])))
 
+# --- Asegurar que la matriz tenga los nombres reales de los arboles ---
+# RobinsonFoulds() devuelve un objeto "dist"; si este no trae la etiqueta
+# "Labels", as.matrix() NO deja rownames en NULL: les asigna nombres
+# genericos "1","2",...,"n". Por eso no basta con chequear is.null();
+# forzamos siempre los nombres reales capturados en nombres_ids, que estan
+# en el mismo orden en que se paso bosque_324 a RobinsonFoulds().
+if (!identical(rownames(mat_324), nombres_ids)) {
+  cat("  AVISO: mat_324 no tenia los nombres reales de los arboles (traia nombres genericos). Reasignando desde nombres_ids.\n")
+  rownames(mat_324) <- nombres_ids
+  colnames(mat_324) <- nombres_ids
+}
+
 
 # =============================================================================
-# 4. CLUSTERING CLARA — seleccion de k por Silhouette
+# 3. CLUSTERING (clara, kmeans o mst-knn)
 # =============================================================================
-cat("\n--- [4] Clustering CLARA sobre submatriz 324x324 ---\n")
+cat(sprintf("\n--- [3] Clustering %s sobre submatriz 324x324 ---\n", toupper(METODO_CLUSTERING)))
 
 K_RANGO   <- 2:10
 SEED      <- 42
@@ -128,32 +99,91 @@ MUESTRAS  <- 50
 
 set.seed(SEED)
 resultados_k <- list()
-silhouettes_k <- numeric(length(K_RANGO))
-names(silhouettes_k) <- as.character(K_RANGO)
+silhouettes_k <- numeric()
 
-for (k in K_RANGO) {
-  res_k <- tryCatch(
-    clara(mat_324, k = k, metric = "euclidean",
-          samples  = MUESTRAS,
-          sampsize = min(nrow(mat_324), 40 + 2 * k),
-          keep.data = FALSE, rngR = TRUE),
-    error = function(e) { cat("  ERROR k=", k, ":", e$message, "\n"); NULL }
-  )
-  if (!is.null(res_k)) {
-    resultados_k[[as.character(k)]] <- res_k
-    silhouettes_k[as.character(k)]  <- res_k$silinfo$avg.width
-    cat(sprintf("  k=%2d  Silhouette=%.4f\n", k, res_k$silinfo$avg.width))
+if (METODO_CLUSTERING %in% c("clara", "kmeans")) {
+  # Calcular embedding MDS para tener un espacio Euclidiano válido
+  N_DIMS <- min(20, nrow(mat_324) - 1)
+  cat(sprintf("  Calculando embedding MDS (k=%d) para %s...\n", N_DIMS, toupper(METODO_CLUSTERING)))
+  mds_coords <- cmdscale(as.dist(mat_324), k = N_DIMS)
+  
+  silhouettes_k <- numeric(length(K_RANGO))
+  names(silhouettes_k) <- as.character(K_RANGO)
+  
+  for (k in K_RANGO) {
+    res_k <- tryCatch({
+      if (METODO_CLUSTERING == "clara") {
+        clara(x = mds_coords, k = k, metric = "euclidean",
+              samples  = MUESTRAS,
+              sampsize = min(nrow(mds_coords), 40 + 2 * k),
+              keep.data = FALSE, rngR = TRUE)
+      } else {
+        kmeans(x = mds_coords, centers = k, nstart = 25)
+      }
+    }, error = function(e) { cat("  ERROR k=", k, ":", e$message, "\n"); NULL })
+    
+    if (!is.null(res_k)) {
+      resultados_k[[as.character(k)]] <- res_k
+      
+      # Calcular silhouette sobre la matriz de distancias ORIGINAL para ambos métodos
+      if (METODO_CLUSTERING == "kmeans") {
+        asignaciones_temp <- res_k$cluster
+      } else {
+        asignaciones_temp <- res_k$clustering
+      }
+      
+      sil <- cluster::silhouette(asignaciones_temp, as.dist(mat_324))
+      sil_avg <- mean(sil[, 3])
+      
+      silhouettes_k[as.character(k)] <- sil_avg
+      cat(sprintf("  k=%2d  Silhouette=%.4f\n", k, sil_avg))
+    }
   }
+  
+  k_optimo <- as.integer(names(which.max(silhouettes_k)))
+  cat(sprintf("\n  K optimo: %d (Silhouette = %.4f)\n",
+              k_optimo, silhouettes_k[as.character(k_optimo)]))
+  
+  if (METODO_CLUSTERING == "clara") {
+    clustering_final <- setNames(
+      as.integer(resultados_k[[as.character(k_optimo)]]$clustering),
+      rownames(mat_324)
+    )
+  } else {
+    clustering_final <- setNames(
+      as.integer(resultados_k[[as.character(k_optimo)]]$cluster),
+      rownames(mat_324)
+    )
+  }
+  
+  sil_df <- data.frame(
+    k          = K_RANGO,
+    Silhouette = as.numeric(silhouettes_k),
+    stringsAsFactors = FALSE
+  )
+  
+} else if (METODO_CLUSTERING == "mst-knn") {
+  mst_res <- mstknnclust::mst.knn(mat_324)
+  k_optimo <- mst_res$cnumber
+  
+  clustering_final <- setNames(
+    as.integer(mst_res$cluster),
+    names(mst_res$cluster)
+  )
+  
+  # Calcular silhouette para el mst-knn optimo
+  sil <- cluster::silhouette(clustering_final, as.dist(mat_324[names(clustering_final), names(clustering_final)]))
+  silhouettes_k <- setNames(mean(sil[, 3]), as.character(k_optimo))
+  
+  cat(sprintf("\n  K optimo: %d (Silhouette = %.4f)\n",
+              k_optimo, silhouettes_k[as.character(k_optimo)]))
+  
+  sil_df <- data.frame(
+    k          = k_optimo,
+    Silhouette = as.numeric(silhouettes_k),
+    stringsAsFactors = FALSE
+  )
 }
-
-k_optimo <- as.integer(names(which.max(silhouettes_k)))
-cat(sprintf("\n  K optimo: %d (Silhouette = %.4f)\n",
-            k_optimo, silhouettes_k[as.character(k_optimo)]))
-
-clustering_final <- setNames(
-  as.integer(resultados_k[[as.character(k_optimo)]]$clustering),
-  rownames(mat_324)
-)
 
 # Tabla de asignaciones
 asig_df <- data.frame(
@@ -172,25 +202,25 @@ print(tamanos)
 
 # Silhouette por k — tabla
 sil_df <- data.frame(
-  k          = K_RANGO,
-  Silhouette = as.numeric(silhouettes_k),
+  k          = sil_df$k,
+  Silhouette = as.numeric(sil_df$Silhouette),
   stringsAsFactors = FALSE
 )
 
 # Exportar clustering
 wb_cl <- createWorkbook()
 wb_cl <- agregar_hoja_formateada(wb_cl, "Asignaciones",
-  paste0("Asignaciones Finales — 324 arboles completos (k=", k_optimo, ")"),
-  asig_df, anchos_col = "auto")
+                                 paste0("Asignaciones Finales — 324 arboles completos (k=", k_optimo, ")"),
+                                 asig_df, anchos_col = "auto")
 wb_cl <- agregar_hoja_formateada(wb_cl, "Tamanos",
-  "Tamanos de Clusteres",
-  tamanos, anchos_col = "auto")
+                                 "Tamanos de Clusteres",
+                                 tamanos, anchos_col = "auto")
 wb_cl <- agregar_hoja_formateada(wb_cl, "Silhouette_por_k",
-  "Silhouette promedio por k",
-  sil_df, anchos_col = "auto")
+                                 "Silhouette promedio por k",
+                                 sil_df, anchos_col = "auto")
 
 ruta_cl <- file.path(DIR_RESULTS,
-  paste0("control_324_clustering_", NOMBRE_BDD, ".xlsx"))
+                     paste0("control_324_clustering_", NOMBRE_BDD, ".xlsx"))
 saveWorkbook(wb_cl, ruta_cl, overwrite = TRUE)
 cat("  Clustering guardado:", ruta_cl, "\n")
 
@@ -198,9 +228,9 @@ rm(resultados_k, mat_324); gc(verbose = FALSE)
 
 
 # =============================================================================
-# 5. CONVERSION NCBI -> HGNC (usando cache existente)
+# 4. CONVERSION NCBI -> HGNC (usando cache existente)
 # =============================================================================
-cat("\n--- [5] Mapeando Gene IDs a HGNC ---\n")
+cat("\n--- [4] Mapeando Gene IDs a HGNC ---\n")
 
 ruta_cache_hgnc <- file.path(DIR_CACHE, "hgnc_conversion.rds")
 if (!file.exists(ruta_cache_hgnc))
@@ -226,9 +256,9 @@ cat(sprintf("  Con simbolo HGNC: %d de %d (%.1f%%)\n",
 
 
 # =============================================================================
-# 6. ENRIQUECIMIENTO FUNCIONAL POR CLUSTER
+# 5. ENRIQUECIMIENTO FUNCIONAL POR CLUSTER
 # =============================================================================
-cat("\n--- [6] Enriquecimiento funcional (gprofiler2) ---\n")
+cat("\n--- [5] Enriquecimiento funcional (gprofiler2) ---\n")
 
 ORGANISMO      <- "hsapiens"
 FUENTES        <- c("GO:BP", "GO:MF", "GO:CC", "KEGG", "REAC")
@@ -251,10 +281,10 @@ for (cid in clusters_unicos) {
     genes_ctrl$Cluster == cid & !is.na(genes_ctrl$HGNC_Symbol)
   ]
   simbolos_cid <- simbolos_cid[simbolos_cid != ""]
-
+  
   ruta_cache_cid <- file.path(dir_cache_ctrl,
-    paste0("ctrl324_enrich_cluster_", cid, ".rds"))
-
+                              paste0("ctrl324_enrich_cluster_", cid, ".rds"))
+  
   if (file.exists(ruta_cache_cid)) {
     cat(sprintf("  Cluster %d: cargando desde cache.\n", cid))
     res_cid <- readRDS(ruta_cache_cid)
@@ -265,6 +295,9 @@ for (cid in clusters_unicos) {
       cat(sprintf("    Menos de %d genes. Saltando.\n", MIN_GENES))
       res_cid <- NULL
     } else {
+      universo_hgnc <- unique(na.omit(hgnc_df$HGNC_Symbol))
+      universo_hgnc <- universo_hgnc[universo_hgnc != ""]
+      
       res_gost <- tryCatch(
         gost(query             = simbolos_cid,
              organism          = ORGANISMO,
@@ -272,6 +305,7 @@ for (cid in clusters_unicos) {
              correction_method = "fdr",
              user_threshold    = P_UMBRAL,
              significant       = TRUE,
+             custom_bg         = universo_hgnc,
              evcodes           = FALSE),
         error = function(e) {
           cat(sprintf("    ERROR: %s\n", e$message)); NULL
@@ -292,9 +326,9 @@ for (cid in clusters_unicos) {
     saveRDS(res_cid, ruta_cache_cid)
     Sys.sleep(0.4)
   }
-
+  
   resultados_enrich[[as.character(cid)]] <- res_cid
-
+  
   resumen_enrich <- rbind(resumen_enrich, data.frame(
     Cluster        = cid,
     N_Genes_Input  = nrow(genes_ctrl[genes_ctrl$Cluster == cid, ]),
@@ -303,7 +337,7 @@ for (cid in clusters_unicos) {
     N_GO_BP        = if (!is.null(res_cid)) sum(res_cid$source == "GO:BP") else 0L,
     N_KEGG         = if (!is.null(res_cid)) sum(res_cid$source == "KEGG")  else 0L,
     Top_Termino    = if (!is.null(res_cid) && nrow(res_cid) > 0)
-                       res_cid$term_name[1] else "—",
+      res_cid$term_name[1] else "—",
     stringsAsFactors = FALSE
   ))
 }
@@ -316,27 +350,29 @@ cat(sprintf("  Total terminos significativos: %d\n", n_terminos_tot))
 
 
 # =============================================================================
-# 7. GRAFICO DE BURBUJAS
+# 6. GRAFICO DE BURBUJAS
 # =============================================================================
-cat("\n--- [7] Generando grafico de burbujas ---\n")
+cat("\n--- [6] Generando grafico de burbujas ---\n")
 
 resultados_df <- do.call(rbind,
-  Filter(Negate(is.null), resultados_enrich))
+                         Filter(Negate(is.null), resultados_enrich))
 rownames(resultados_df) <- NULL
 
 ruta_png <- file.path(DIR_RESULTS,
-  paste0("control_324_burbujas_", NOMBRE_BDD, ".png"))
+                      paste0("control_324_burbujas_", NOMBRE_BDD, ".png"))
 
 if (!is.null(resultados_df) && nrow(resultados_df) > 0) {
-
-  # Filtrar a GO:BP y top 20 terminos por frecuencia en clusteres
+  
+  # Filtrar a GO:BP
   gobp <- resultados_df[resultados_df$source == "GO:BP", ]
-
+  
   if (nrow(gobp) > 0) {
-    freq_terminos <- sort(table(gobp$term_name), decreasing = TRUE)
-    top_terminos  <- names(freq_terminos)[seq_len(min(20, length(freq_terminos)))]
-    gobp_plot     <- gobp[gobp$term_name %in% top_terminos, ]
-
+    # Top 20 términos por clúster según p_value
+    gobp_plot <- do.call(rbind, lapply(split(gobp, gobp$Cluster), function(df_cluster) {
+      head(df_cluster[order(df_cluster$p_value), ], 20)
+    }))
+    rownames(gobp_plot) <- NULL
+    
     # Truncar nombres
     gobp_plot$term_short <- ifelse(
       nchar(gobp_plot$term_name) > 45,
@@ -345,7 +381,7 @@ if (!is.null(resultados_df) && nrow(resultados_df) > 0) {
     )
     gobp_plot$log10_fdr  <- -log10(gobp_plot$p_value)
     gobp_plot$Cluster    <- factor(gobp_plot$Cluster)
-
+    
     p_burbuja <- ggplot(gobp_plot,
                         aes(x = Cluster,
                             y = reorder(term_short, log10_fdr),
@@ -358,8 +394,8 @@ if (!is.null(resultados_df) && nrow(resultados_df) > 0) {
       labs(
         title    = "Control: enriquecimiento GO:BP en los 324 arboles sin injerto",
         subtitle = sprintf(
-          "k = %d clusteres | %d terminos GO:BP significativos | n = 324 arboles (190 sp. completas)",
-          k_optimo, nrow(gobp_plot)
+          "k = %d clusteres | %d terminos GO:BP en total (%d burbujas ilustradas) | n = 324 arboles (190 sp. completas)",
+          k_optimo, nrow(gobp), nrow(gobp_plot)
         ),
         x        = "Cluster",
         y        = NULL,
@@ -376,7 +412,7 @@ if (!is.null(resultados_df) && nrow(resultados_df) > 0) {
         axis.text.y   = element_text(size = 8),
         legend.position = "right"
       )
-
+    
     ggsave(ruta_png, plot = p_burbuja,
            width = 10,
            height = max(6, length(unique(gobp_plot$term_short)) * 0.38 + 3),
@@ -391,14 +427,14 @@ if (!is.null(resultados_df) && nrow(resultados_df) > 0) {
 
 
 # =============================================================================
-# 8. EXPORTAR EXCEL DE ENRIQUECIMIENTO
+# 7. EXPORTAR EXCEL DE ENRIQUECIMIENTO
 # =============================================================================
-cat("\n--- [8] Exportando Excel de enriquecimiento ---\n")
+cat("\n--- [7] Exportando Excel de enriquecimiento ---\n")
 
 wb_en <- createWorkbook()
 wb_en <- agregar_hoja_formateada(wb_en, "Resumen",
-  paste0("Resumen enriquecimiento — 324 arboles completos (k=", k_optimo, ")"),
-  resumen_enrich, anchos_col = "auto")
+                                 paste0("Resumen enriquecimiento — 324 arboles completos (k=", k_optimo, ")"),
+                                 resumen_enrich, anchos_col = "auto")
 
 if (!is.null(resultados_df) && nrow(resultados_df) > 0) {
   cols_keep <- intersect(
@@ -407,29 +443,29 @@ if (!is.null(resultados_df) && nrow(resultados_df) > 0) {
     colnames(resultados_df)
   )
   wb_en <- agregar_hoja_formateada(wb_en, "Todos_Terminos",
-    "Todos los terminos significativos",
-    resultados_df[, cols_keep], anchos_col = "auto")
-
+                                   "Todos los terminos significativos",
+                                   resultados_df[, cols_keep], anchos_col = "auto")
+  
   for (cid in names(resultados_enrich)) {
     res_cid <- resultados_enrich[[cid]]
     if (is.null(res_cid) || nrow(res_cid) == 0) next
     nombre_h <- paste0("Cluster_", cid)
     wb_en <- agregar_hoja_formateada(wb_en, nombre_h,
-      paste0("Cluster ", cid, " — ", nrow(res_cid), " terminos"),
-      res_cid[, cols_keep], anchos_col = "auto")
+                                     paste0("Cluster ", cid, " — ", nrow(res_cid), " terminos"),
+                                     res_cid[, cols_keep], anchos_col = "auto")
   }
 }
 
 ruta_en <- file.path(DIR_RESULTS,
-  paste0("control_324_enrichment_", NOMBRE_BDD, ".xlsx"))
+                     paste0("control_324_enrichment_", NOMBRE_BDD, ".xlsx"))
 saveWorkbook(wb_en, ruta_en, overwrite = TRUE)
 cat("  Excel guardado:", ruta_en, "\n")
 
 
 # =============================================================================
-# 9. CSV RESUMEN + TEXTO LaTeX
+# 8. CSV RESUMEN
 # =============================================================================
-cat("\n--- [9] Resumen y texto LaTeX ---\n")
+cat("\n--- [8] Resumen ---\n")
 
 resumen_csv <- data.frame(
   Metrica = c("n_arboles_control", "n_arboles_con_hgnc",
@@ -449,13 +485,13 @@ resumen_csv <- data.frame(
 )
 
 ruta_csv <- file.path(DIR_RESULTS,
-  paste0("control_324_resumen_", NOMBRE_BDD, ".csv"))
+                      paste0("control_324_resumen_", NOMBRE_BDD, ".csv"))
 write.csv(resumen_csv, ruta_csv, row.names = FALSE)
 cat("  CSV guardado:", ruta_csv, "\n")
 
-cat("\n=============================================================\n")
-cat(" RESULTADO FINAL\n")
-cat("=============================================================\n")
+cat("=============================================================")
+cat(" RESULTADO FINAL")
+cat("=============================================================")
 
 cat(sprintf("  Arboles analizados   : %d (100%% completos, sin injerto)\n",
             nrow(asig_df)))
@@ -464,62 +500,5 @@ cat(sprintf("  k optimo             : %d (Silhouette = %.4f)\n",
 cat(sprintf("  Clusters con GO sig  : %d / %d\n",
             n_clusters_sig, length(clusters_unicos)))
 cat(sprintf("  Terminos sig totales : %d\n", n_terminos_tot))
-
-cat("\n=============================================================\n")
-cat(" TEXTO PARA SECCION 3.5 (LaTeX)\n")
-cat("=============================================================\n\n")
-
-if (n_clusters_sig > 0) {
-  interpretacion <- paste0(
-    "Este resultado es \\textbf{positivo}: ",
-    n_clusters_sig, " de ", length(clusters_unicos),
-    " cl\\'{u}steres presentaron al menos un t\\'{e}rmino GO ",
-    "significativo (FDR $< 0{,}05$), acumulando ", n_terminos_tot,
-    " t\\'{e}rminos en total. Dado que este subconjunto no fue ",
-    "sometido a ning\\'{u}n procedimiento de injerto filogen\\'{e}tico, ",
-    "la aparici\\'{o}n de coherencia funcional confirma que la se\\~{n}al ",
-    "biol\\'{o}gica detectada en el an\\'{a}lisis principal es intr\\'{i}nseca ",
-    "a la variabilidad topol\\'{o}gica de los genes ort\\'{o}logos y no un ",
-    "artefacto de la homogeneizaci\\'{o}n por injerto."
-  )
-} else {
-  interpretacion <- paste0(
-    "Este resultado es \\textbf{ambiguo}: ninguno de los ",
-    length(clusters_unicos),
-    " cl\\'{u}steres alcanz\\'{o} significancia estad\\'{i}stica en ",
-    "el enriquecimiento funcional (FDR $< 0{,}05$). Sin embargo, con ",
-    "\\'{u}nicamente ", nrow(asig_df), " genes (frente a los ",
-    "$15.868$ del an\\'{a}lisis principal), la potencia estad\\'{i}stica ",
-    "del enriquecimiento es inherentemente menor. Un resultado negativo ",
-    "en este contexto no refuta la coherencia funcional observada en el ",
-    "corpus completo; simplemente indica que el subconjunto de control ",
-    "no tiene tama\\~{n}o suficiente para detectarla de forma robusta."
-  )
-}
-
-cat(paste0(
-  "\\subsection{Grupo de control: \\'{a}rboles sin injerto (324 \\'{a}rboles completos)}\n\n",
-  "Como experimento de control definitivo para la Observaci\\'{o}n~1.2, se ",
-  "agreg\\'{o} el subconjunto de los \\textbf{324 \\'{a}rboles filogen\\'{e}ticos} ",
-  "que ya conten\\'{i}an las \\textbf{190 especies} de forma completa (sin ",
-  "requerir ning\\'{u}n injerto). Sobre estos \\'{a}rboles se calcul\\'{o} una ",
-  "nueva matriz de distancias de Robinson-Foulds $324 \\\\times 324$ exclusivamente ",
-  "con topolog\\'{i}as originales, se aplic\\'{o} CLARA con selecci\\'{o}n autom\\'{a}tica ",
-  "de $k$ por el coeficiente Silhouette ($k_{\\\\text{optimo}} = ", k_optimo, "$, ",
-  "Silhouette $= ", round(silhouettes_k[as.character(k_optimo)], 4), "$) y se ",
-  "ejecut\\'{o} el an\\'{a}lisis de enriquecimiento funcional mediante \\texttt{gprofiler2} ",
-  "(FDR $< 0{,}05$, GO:BP, KEGG y Reactome).\n\n",
-  interpretacion, "\n\n",
-  "\\begin{figure}[H]\n",
-  "    \\centering\n",
-  "    \\includegraphics[width=0.85\\textwidth]{images/control_324_burbujas_", NOMBRE_BDD, ".png}\n",
-  "    \\caption{Enriquecimiento funcional (GO:BP) sobre los ",
-  nrow(asig_df), " \\'{a}rboles filogen\\'{e}ticos completos sin injerto ",
-  "($k = ", k_optimo, "$ cl\\'{u}steres). El tama\\~{n}o de cada burbuja es ",
-  "proporcional al n\\'{u}mero de genes del cl\\'{u}ster presentes en el t\\'{e}rmino ",
-  "y el color representa la significancia ($-\\\\log_{10}$(FDR)).}\n",
-  "    \\label{fig:control_324_burbujas}\n",
-  "\\end{figure}\n"
-))
 
 cat("\n=== COMPLETADO ===\n")
