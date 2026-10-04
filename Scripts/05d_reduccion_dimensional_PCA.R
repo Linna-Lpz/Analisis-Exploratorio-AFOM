@@ -140,9 +140,19 @@ k_km  <- ifelse(is.na(k_optimos["KMeans"]), "?", k_optimos["KMeans"])
 k_pam <- ifelse(is.na(k_optimos["PAM"]),    "?", k_optimos["PAM"])
 k_cl  <- ifelse(is.na(k_optimos["CLARA"]),  "?", k_optimos["CLARA"])
 
+# =============================================================================
+# DETECTAR ALGORITMO DOWNSTREAM (si fue definido por run_pipeline.R)
+# Si no existe, se generan todos los gráficos (modo standalone)
+# =============================================================================
+algoritmo <- if (exists("ALGORITMO_DOWNSTREAM", envir = globalenv())) {
+  get("ALGORITMO_DOWNSTREAM", envir = globalenv())
+} else {
+  "TODOS"
+}
+cat(sprintf("Algoritmo downstream para gráficos PCA: %s\n", algoritmo))
 
 # =============================================================================
-# GRÁFICO PRINCIPAL — PC1 vs PC2
+# GRÁFICO PRINCIPAL — PC1 vs PC2 (solo del algoritmo elegido)
 # =============================================================================
 cat("\n=== GENERANDO GRÁFICOS ===\n")
 
@@ -183,33 +193,42 @@ graficar_clustering_pca <- function(df, col_cluster, titulo, subtitulo = "") {
     guides(color = guide_legend(override.aes = list(size = 3, alpha = 1), ncol = 5))
 }
 
-p_kmeans <- graficar_clustering_pca(coords_df, "Cluster_KMeans", "K-Means",
-                                    sprintf("k = %s  |  n = %d árboles  |  PC1+PC2 = %.1f%%", k_km,  nrow(coords_df), var_total_2d))
-p_pam    <- graficar_clustering_pca(coords_df, "Cluster_PAM",    "PAM (K-Medoids)",
-                                    sprintf("k = %s  |  n = %d árboles  |  PC1+PC2 = %.1f%%", k_pam, nrow(coords_df), var_total_2d))
-p_clara  <- graficar_clustering_pca(coords_df, "Cluster_CLARA",  "CLARA",
-                                    sprintf("k = %s  |  n = %d árboles  |  PC1+PC2 = %.1f%%", k_cl,  nrow(coords_df), var_total_2d))
+graficos_individuales <- list()
 
-plots_disponibles <- Filter(Negate(is.null), list(p_kmeans, p_pam, p_clara))
+if (algoritmo %in% c("TODOS", "K-Means")) {
+  p_kmeans <- graficar_clustering_pca(coords_df, "Cluster_KMeans", "K-Means",
+                                      sprintf("k = %s  |  n = %d árboles  |  PC1+PC2 = %.1f%%", k_km,  nrow(coords_df), var_total_2d))
+  graficos_individuales <- c(graficos_individuales,
+                             list(list(plot = p_kmeans, nombre = "pca_kmeans")))
+}
+
+if (algoritmo %in% c("TODOS", "PAM")) {
+  p_pam <- graficar_clustering_pca(coords_df, "Cluster_PAM", "PAM (K-Medoids)",
+                                   sprintf("k = %s  |  n = %d árboles  |  PC1+PC2 = %.1f%%", k_pam, nrow(coords_df), var_total_2d))
+  graficos_individuales <- c(graficos_individuales,
+                             list(list(plot = p_pam, nombre = "pca_pam")))
+}
+
+if (algoritmo %in% c("TODOS", "CLARA")) {
+  p_clara <- graficar_clustering_pca(coords_df, "Cluster_CLARA", "CLARA",
+                                     sprintf("k = %s  |  n = %d árboles  |  PC1+PC2 = %.1f%%", k_cl,  nrow(coords_df), var_total_2d))
+  graficos_individuales <- c(graficos_individuales,
+                             list(list(plot = p_clara, nombre = "pca_clara")))
+}
 
 # =============================================================================
 # GUARDAR GRÁFICOS INDIVIDUALES POR ALGORITMO (K ÓPTIMO)
 # =============================================================================
 cat("\n=== GUARDANDO GRÁFICOS INDIVIDUALES (K ÓPTIMO) ===\n")
 
-if (length(plots_disponibles) > 0) {
-  for (g in list(
-    list(plot = p_kmeans, nombre = "pca_kmeans"),
-    list(plot = p_pam,    nombre = "pca_pam"),
-    list(plot = p_clara,  nombre = "pca_clara")
-  )) {
+if (length(graficos_individuales) > 0) {
+  for (g in graficos_individuales) {
     if (!is.null(g$plot)) {
       ruta_g <- file.path(DIR_RESULTS, paste0(g$nombre, "_", NOMBRE_BDD, ".png"))
       ggsave(ruta_g, plot = g$plot, width = 8, height = 6, dpi = 300)
       cat("Gráfico guardado:", ruta_g, "\n")
     }
   }
-  rm(p_kmeans, p_pam, p_clara, plots_disponibles)
   gc(verbose = FALSE)
 } else {
   cat("  [aviso] Ninguna columna de clustering con k óptimo encontrada. Saltando gráficos individuales.\n")
@@ -217,36 +236,43 @@ if (length(plots_disponibles) > 0) {
 
 # =============================================================================
 # GRÁFICOS PCA — K EXTRA (k=10, k=15, etc.)
+# Solo para el algoritmo elegido
 # =============================================================================
 for (ke in k_extra) {
   cat(sprintf("\n=== GENERANDO GRÁFICOS PCA (K = %d) ===\n", ke))
   
-  col_km  <- paste0("Cluster_KMeans_K", ke)
-  col_pam <- paste0("Cluster_PAM_K",    ke)
-  col_cl  <- paste0("Cluster_CLARA_K",  ke)
+  plots_extra <- list()
   
-  pe_kmeans <- graficar_clustering_pca(coords_df, col_km, "K-Means",
-                                       sprintf("k = %d  |  n = %d árboles  |  PC1+PC2 = %.1f%%", ke, nrow(coords_df), var_total_2d))
-  pe_pam    <- graficar_clustering_pca(coords_df, col_pam, "PAM (K-Medoids)",
-                                       sprintf("k = %d  |  n = %d árboles  |  PC1+PC2 = %.1f%%", ke, nrow(coords_df), var_total_2d))
-  pe_clara  <- graficar_clustering_pca(coords_df, col_cl, "CLARA",
-                                       sprintf("k = %d  |  n = %d árboles  |  PC1+PC2 = %.1f%%", ke, nrow(coords_df), var_total_2d))
+  if (algoritmo %in% c("TODOS", "K-Means")) {
+    col_km <- paste0("Cluster_KMeans_K", ke)
+    pe_kmeans <- graficar_clustering_pca(coords_df, col_km, "K-Means",
+                                         sprintf("k = %d  |  n = %d árboles  |  PC1+PC2 = %.1f%%", ke, nrow(coords_df), var_total_2d))
+    plots_extra <- c(plots_extra,
+                     list(list(plot = pe_kmeans, nombre = paste0("pca_kmeans_K", ke))))
+  }
   
-  plots_extra <- Filter(Negate(is.null), list(pe_kmeans, pe_pam, pe_clara))
+  if (algoritmo %in% c("TODOS", "PAM")) {
+    col_pam <- paste0("Cluster_PAM_K", ke)
+    pe_pam <- graficar_clustering_pca(coords_df, col_pam, "PAM (K-Medoids)",
+                                      sprintf("k = %d  |  n = %d árboles  |  PC1+PC2 = %.1f%%", ke, nrow(coords_df), var_total_2d))
+    plots_extra <- c(plots_extra,
+                     list(list(plot = pe_pam, nombre = paste0("pca_pam_K", ke))))
+  }
   
-  if (length(plots_extra) > 0) {
-    for (g in list(
-      list(plot = pe_kmeans, nombre = paste0("pca_kmeans_K", ke)),
-      list(plot = pe_pam,    nombre = paste0("pca_pam_K",    ke)),
-      list(plot = pe_clara,  nombre = paste0("pca_clara_K",  ke))
-    )) {
-      if (!is.null(g$plot)) {
-        ruta_g <- file.path(DIR_RESULTS, paste0(g$nombre, "_", NOMBRE_BDD, ".png"))
-        ggsave(ruta_g, plot = g$plot, width = 8, height = 6, dpi = 300)
-        cat("Gráfico guardado:", ruta_g, "\n")
-      }
+  if (algoritmo %in% c("TODOS", "CLARA")) {
+    col_cl <- paste0("Cluster_CLARA_K", ke)
+    pe_clara <- graficar_clustering_pca(coords_df, col_cl, "CLARA",
+                                        sprintf("k = %d  |  n = %d árboles  |  PC1+PC2 = %.1f%%", ke, nrow(coords_df), var_total_2d))
+    plots_extra <- c(plots_extra,
+                     list(list(plot = pe_clara, nombre = paste0("pca_clara_K", ke))))
+  }
+  
+  for (g in plots_extra) {
+    if (!is.null(g$plot)) {
+      ruta_g <- file.path(DIR_RESULTS, paste0(g$nombre, "_", NOMBRE_BDD, ".png"))
+      ggsave(ruta_g, plot = g$plot, width = 8, height = 6, dpi = 300)
+      cat("Gráfico guardado:", ruta_g, "\n")
     }
-    rm(pe_kmeans, pe_pam, pe_clara)
   }
 }
 
@@ -312,14 +338,16 @@ ggsave(ruta_scree, plot = p_scree, width = 10, height = 6, dpi = 300)
 cat("Scree plot guardado:", ruta_scree, "\n")
 
 # =============================================================================
-# GRÁFICO PCA — KMEANS SUBDIVISIÓN ITERATIVA
+# GRÁFICOS PCA — SUBDIVISIÓN ITERATIVA (solo del algoritmo elegido)
 # =============================================================================
-if ("Cluster_Kmeans_Iter" %in% colnames(coords_df)) {
+
+# --- K-Means Iterativa ---
+if (algoritmo %in% c("TODOS", "K-Means") &&
+    "Cluster_Kmeans_Iter" %in% colnames(coords_df)) {
   
   n_iter <- length(unique(na.omit(coords_df$Cluster_Kmeans_Iter)))
   cat(sprintf("\n=== GENERANDO GRÁFICO KMEANS ITERATIVA (k=%d) ===\n", n_iter))
   
-  # Paleta ampliada — hcl.colors para k grande
   paleta_iter <- if (n_iter <= 20) {
     c("#E41A1C","#377EB8","#4DAF4A","#984EA3","#FF7F00",
       "#A65628","#F781BF","#999999","#66C2A5","#FC8D62",
@@ -346,12 +374,11 @@ if ("Cluster_Kmeans_Iter" %in% colnames(coords_df)) {
     theme(
       plot.title      = element_text(face = "bold", size = 12),
       plot.subtitle   = element_text(color = "gray40", size = 9),
-      # ocultar leyenda si hay muchos clusters — satura el gráfico
       legend.position = if (n_iter > 15) "none" else "bottom"
     ) +
     guides(color = guide_legend(
       override.aes = list(size = 3, alpha = 1),
-      ncol = 5   # leyenda en 5 columnas si se muestra
+      ncol = 5
     ))
   
   ruta_iter <- file.path(DIR_RESULTS,
@@ -359,19 +386,17 @@ if ("Cluster_Kmeans_Iter" %in% colnames(coords_df)) {
   ggsave(ruta_iter, plot = p_iter, width = 9, height = 7, dpi = 300)
   cat("Gráfico KMEANS iterativa guardado:", ruta_iter, "\n")
   
-} else {
-  cat("Columna 'Cluster_Kmeans_Iter' no encontrada. Saltando gráfico iterativo.\n")
+} else if (algoritmo %in% c("TODOS", "K-Means")) {
+  cat("Columna 'Cluster_Kmeans_Iter' no encontrada. Saltando gráfico iterativo K-Means.\n")
 }
 
-# =============================================================================
-# GRÁFICO PCA — CLARA SUBDIVISIÓN ITERATIVA
-# =============================================================================
-if ("Cluster_CLARA_Iter" %in% colnames(coords_df)) {
+# --- CLARA Iterativa ---
+if (algoritmo %in% c("TODOS", "CLARA") &&
+    "Cluster_CLARA_Iter" %in% colnames(coords_df)) {
   
   n_iter <- length(unique(na.omit(coords_df$Cluster_CLARA_Iter)))
   cat(sprintf("\n=== GENERANDO GRÁFICO CLARA ITERATIVA (k=%d) ===\n", n_iter))
   
-  # Paleta ampliada — hcl.colors para k grande
   paleta_iter <- if (n_iter <= 20) {
     c("#E41A1C","#377EB8","#4DAF4A","#984EA3","#FF7F00",
       "#A65628","#F781BF","#999999","#66C2A5","#FC8D62",
@@ -398,12 +423,11 @@ if ("Cluster_CLARA_Iter" %in% colnames(coords_df)) {
     theme(
       plot.title      = element_text(face = "bold", size = 12),
       plot.subtitle   = element_text(color = "gray40", size = 9),
-      # ocultar leyenda si hay muchos clusters — satura el gráfico
       legend.position = if (n_iter > 15) "none" else "bottom"
     ) +
     guides(color = guide_legend(
       override.aes = list(size = 3, alpha = 1),
-      ncol = 5   # leyenda en 5 columnas si se muestra
+      ncol = 5
     ))
   
   ruta_iter <- file.path(DIR_RESULTS,
@@ -411,19 +435,66 @@ if ("Cluster_CLARA_Iter" %in% colnames(coords_df)) {
   ggsave(ruta_iter, plot = p_iter, width = 9, height = 7, dpi = 300)
   cat("Gráfico CLARA iterativa guardado:", ruta_iter, "\n")
   
-} else {
-  cat("Columna 'Cluster_CLARA_Iter' no encontrada. Saltando gráfico iterativo.\n")
+} else if (algoritmo %in% c("TODOS", "CLARA")) {
+  cat("Columna 'Cluster_CLARA_Iter' no encontrada. Saltando gráfico iterativo CLARA.\n")
 }
 
-# =============================================================================
-# GRÁFICO PCA — MST-KNN SUBDIVISIÓN ITERATIVA
-# =============================================================================
-if ("Cluster_MSTKNN_Iter" %in% colnames(coords_df)) {
+# --- PAM Iterativa ---
+if (algoritmo %in% c("TODOS", "PAM") &&
+    "Cluster_PAM_Iter" %in% colnames(coords_df)) {
+  
+  n_iter <- length(unique(na.omit(coords_df$Cluster_PAM_Iter)))
+  cat(sprintf("\n=== GENERANDO GRÁFICO PAM ITERATIVA (k=%d) ===\n", n_iter))
+  
+  paleta_iter <- if (n_iter <= 20) {
+    c("#E41A1C","#377EB8","#4DAF4A","#984EA3","#FF7F00",
+      "#A65628","#F781BF","#999999","#66C2A5","#FC8D62",
+      "#8DA0CB","#E78AC3","#A6D854","#FFD92F","#E5C494",
+      "#B3B3B3","#1B9E77","#D95F02","#7570B3","#E7298A")[seq_len(n_iter)]
+  } else {
+    hcl.colors(n_iter, palette = "Dynamic")
+  }
+  
+  p_iter <- ggplot(coords_df,
+                   aes(x = PC1, y = PC2, color = Cluster_PAM_Iter)) +
+    geom_point(alpha = 0.6, size = 1.2) +
+    scale_color_manual(values = paleta_iter,
+                       name   = "Cluster",
+                       na.value = "grey80") +
+    labs(
+      title    = "PAM — Subdivisión Iterativa",
+      subtitle = sprintf("k = %d  |  n = %d árboles  |  PC1+PC2 = %.1f%%",
+                         n_iter, nrow(coords_df), var_total_2d),
+      x        = paste0("PC1 (", var_pc1, "%)"),
+      y        = paste0("PC2 (", var_pc2, "%)")
+    ) +
+    theme_minimal(base_size = 11) +
+    theme(
+      plot.title      = element_text(face = "bold", size = 12),
+      plot.subtitle   = element_text(color = "gray40", size = 9),
+      legend.position = if (n_iter > 15) "none" else "bottom"
+    ) +
+    guides(color = guide_legend(
+      override.aes = list(size = 3, alpha = 1),
+      ncol = 5
+    ))
+  
+  ruta_iter <- file.path(DIR_RESULTS,
+                         paste0("pca_pam_iterativa_", NOMBRE_BDD, ".png"))
+  ggsave(ruta_iter, plot = p_iter, width = 9, height = 7, dpi = 300)
+  cat("Gráfico PAM iterativa guardado:", ruta_iter, "\n")
+  
+} else if (algoritmo %in% c("TODOS", "PAM")) {
+  cat("Columna 'Cluster_PAM_Iter' no encontrada. Saltando gráfico iterativo PAM.\n")
+}
+
+# --- MST-kNN Iterativa ---
+if (algoritmo %in% c("TODOS", "MST-kNN") &&
+    "Cluster_MSTKNN_Iter" %in% colnames(coords_df)) {
   
   n_iter <- length(unique(na.omit(coords_df$Cluster_MSTKNN_Iter)))
   cat(sprintf("\n=== GENERANDO GRÁFICO MST-KNN ITERATIVA (k=%d) ===\n", n_iter))
   
-  # Paleta ampliada — hcl.colors para k grande
   paleta_iter <- if (n_iter <= 20) {
     c("#E41A1C","#377EB8","#4DAF4A","#984EA3","#FF7F00",
       "#A65628","#F781BF","#999999","#66C2A5","#FC8D62",
@@ -450,12 +521,11 @@ if ("Cluster_MSTKNN_Iter" %in% colnames(coords_df)) {
     theme(
       plot.title      = element_text(face = "bold", size = 12),
       plot.subtitle   = element_text(color = "gray40", size = 9),
-      # ocultar leyenda si hay muchos clusters — satura el gráfico
       legend.position = if (n_iter > 15) "none" else "bottom"
     ) +
     guides(color = guide_legend(
       override.aes = list(size = 3, alpha = 1),
-      ncol = 5   # leyenda en 5 columnas si se muestra
+      ncol = 5
     ))
   
   ruta_iter <- file.path(DIR_RESULTS,
@@ -463,8 +533,8 @@ if ("Cluster_MSTKNN_Iter" %in% colnames(coords_df)) {
   ggsave(ruta_iter, plot = p_iter, width = 9, height = 7, dpi = 300)
   cat("Gráfico MST-KNN iterativa guardado:", ruta_iter, "\n")
   
-} else {
-  cat("Columna 'Cluster_MSTKNN_Iter' no encontrada. Saltando gráfico iterativo.\n")
+} else if (algoritmo %in% c("TODOS", "MST-kNN")) {
+  cat("Columna 'Cluster_MSTKNN_Iter' no encontrada. Saltando gráfico iterativo MST-kNN.\n")
 }
 
 # =============================================================================

@@ -137,29 +137,55 @@ graficar_clustering <- function(df, col_cluster, titulo, subtitulo = "") {
 }
 
 # =============================================================================
-# GENERAR GRÁFICOS INDIVIDUALES
+# DETECTAR ALGORITMO DOWNSTREAM (si fue definido por run_pipeline.R)
+# Si no existe, se generan todos los gráficos (modo standalone)
+# =============================================================================
+algoritmo <- if (exists("ALGORITMO_DOWNSTREAM", envir = globalenv())) {
+  get("ALGORITMO_DOWNSTREAM", envir = globalenv())
+} else {
+  "TODOS"
+}
+cat(sprintf("Algoritmo downstream para gráficos UMAP: %s\n", algoritmo))
+
+# =============================================================================
+# GENERAR GRÁFICOS INDIVIDUALES (solo del algoritmo elegido)
 # =============================================================================
 cat("\n=== GENERANDO GRÁFICOS (K ÓPTIMO) ===\n")
 
-p_kmeans <- graficar_clustering(
-  df          = coords_df,
-  col_cluster = "Cluster_KMeans",
-  titulo      = "K-Means",
-  subtitulo   = sprintf("k = %s  |  n = %d árboles", k_km, nrow(coords_df))
-)
+graficos_individuales <- list()
 
-p_clara <- graficar_clustering(
-  df          = coords_df,
-  col_cluster = "Cluster_CLARA",
-  titulo      = "CLARA",
-  subtitulo   = sprintf("k = %s  |  n = %d árboles", k_cl, nrow(coords_df))
-)
+if (algoritmo %in% c("TODOS", "K-Means")) {
+  p_kmeans <- graficar_clustering(
+    df          = coords_df,
+    col_cluster = "Cluster_KMeans",
+    titulo      = "K-Means",
+    subtitulo   = sprintf("k = %s  |  n = %d árboles", k_km, nrow(coords_df))
+  )
+  graficos_individuales <- c(graficos_individuales,
+                             list(list(plot = p_kmeans, nombre = "umap_kmeans")))
+}
 
-graficos_individuales <- list(
-  list(plot = p_kmeans, nombre = "umap_kmeans"),
-  list(plot = p_pam,    nombre = "umap_pam"),
-  list(plot = p_clara,  nombre = "umap_clara")
-)
+if (algoritmo %in% c("TODOS", "CLARA")) {
+  p_clara <- graficar_clustering(
+    df          = coords_df,
+    col_cluster = "Cluster_CLARA",
+    titulo      = "CLARA",
+    subtitulo   = sprintf("k = %s  |  n = %d árboles", k_cl, nrow(coords_df))
+  )
+  graficos_individuales <- c(graficos_individuales,
+                             list(list(plot = p_clara, nombre = "umap_clara")))
+}
+
+if (algoritmo %in% c("TODOS", "PAM")) {
+  p_pam <- graficar_clustering(
+    df          = coords_df,
+    col_cluster = "Cluster_PAM",
+    titulo      = "PAM",
+    subtitulo   = sprintf("k = %s  |  n = %d árboles", k_pam, nrow(coords_df))
+  )
+  graficos_individuales <- c(graficos_individuales,
+                             list(list(plot = p_pam, nombre = "umap_pam")))
+}
 
 for (g in graficos_individuales) {
   if (!is.null(g$plot)) {
@@ -170,14 +196,16 @@ for (g in graficos_individuales) {
 }
 
 # =============================================================================
-# GRÁFICO UMAP — MST-KNN SUBDIVISIÓN ITERATIVA
+# GRÁFICO UMAP — SUBDIVISIÓN ITERATIVA (solo del algoritmo elegido)
 # =============================================================================
-if ("Cluster_MSTKNN_Iter" %in% colnames(coords_df)) {
+
+# --- MST-kNN Iterativa ---
+if (algoritmo %in% c("TODOS", "MST-kNN") &&
+    "Cluster_MSTKNN_Iter" %in% colnames(coords_df)) {
   
   n_iter <- length(unique(na.omit(coords_df$Cluster_MSTKNN_Iter)))
   cat(sprintf("\n=== GENERANDO GRÁFICO MST-KNN ITERATIVA (k=%d) ===\n", n_iter))
   
-  # Paleta ampliada — hcl.colors para k grande
   paleta_iter <- if (n_iter <= 20) {
     c("#E41A1C","#377EB8","#4DAF4A","#984EA3","#FF7F00",
       "#A65628","#F781BF","#999999","#66C2A5","#FC8D62",
@@ -203,12 +231,11 @@ if ("Cluster_MSTKNN_Iter" %in% colnames(coords_df)) {
     theme(
       plot.title      = element_text(face = "bold", size = 12),
       plot.subtitle   = element_text(color = "gray40", size = 9),
-      # ocultar leyenda si hay muchos clusters — satura el gráfico
       legend.position = if (n_iter > 15) "none" else "bottom"
     ) +
     guides(color = guide_legend(
       override.aes = list(size = 3, alpha = 1),
-      ncol = 5   # leyenda en 5 columnas si se muestra
+      ncol = 5
     ))
   
   ruta_iter <- file.path(DIR_RESULTS,
@@ -216,8 +243,152 @@ if ("Cluster_MSTKNN_Iter" %in% colnames(coords_df)) {
   ggsave(ruta_iter, plot = p_iter, width = 9, height = 7, dpi = 300)
   cat("Gráfico MST-KNN iterativa guardado:", ruta_iter, "\n")
   
-} else {
-  cat("Columna 'Cluster_MSTKNN_Iter' no encontrada. Saltando gráfico iterativo.\n")
+} else if (algoritmo %in% c("TODOS", "MST-kNN")) {
+  cat("Columna 'Cluster_MSTKNN_Iter' no encontrada. Saltando gráfico iterativo MST-kNN.\n")
+}
+
+# --- K-Means Iterativa ---
+if (algoritmo %in% c("TODOS", "K-Means") &&
+    "Cluster_KMeans_Iter" %in% colnames(coords_df)) {
+  
+  n_iter <- length(unique(na.omit(coords_df$Cluster_KMeans_Iter)))
+  cat(sprintf("\n=== GENERANDO GRÁFICO K-MEANS ITERATIVA (k=%d) ===\n", n_iter))
+  
+  paleta_iter <- if (n_iter <= 20) {
+    c("#E41A1C","#377EB8","#4DAF4A","#984EA3","#FF7F00",
+      "#A65628","#F781BF","#999999","#66C2A5","#FC8D62",
+      "#8DA0CB","#E78AC3","#A6D854","#FFD92F","#E5C494",
+      "#B3B3B3","#1B9E77","#D95F02","#7570B3","#E7298A")[seq_len(n_iter)]
+  } else {
+    hcl.colors(n_iter, palette = "Dynamic")
+  }
+  
+  p_iter <- ggplot(coords_df,
+                   aes(x = UMAP_1, y = UMAP_2, color = Cluster_KMeans_Iter)) +
+    geom_point(alpha = 0.6, size = 1.2) +
+    scale_color_manual(values = paleta_iter,
+                       name   = "Cluster",
+                       na.value = "grey80") +
+    labs(
+      title    = "K-Means — Subdivisión Iterativa",
+      subtitle = sprintf("k = %d  |  n = %d árboles", n_iter, nrow(coords_df)),
+      x        = "UMAP 1",
+      y        = "UMAP 2"
+    ) +
+    theme_minimal(base_size = 11) +
+    theme(
+      plot.title      = element_text(face = "bold", size = 12),
+      plot.subtitle   = element_text(color = "gray40", size = 9),
+      legend.position = if (n_iter > 15) "none" else "bottom"
+    ) +
+    guides(color = guide_legend(
+      override.aes = list(size = 3, alpha = 1),
+      ncol = 5
+    ))
+  
+  ruta_iter <- file.path(DIR_RESULTS,
+                         paste0("umap_kmeans_iterativa_", NOMBRE_BDD, ".png"))
+  ggsave(ruta_iter, plot = p_iter, width = 9, height = 7, dpi = 300)
+  cat("Gráfico K-Means iterativa guardado:", ruta_iter, "\n")
+  
+} else if (algoritmo %in% c("TODOS", "K-Means")) {
+  cat("Columna 'Cluster_KMeans_Iter' no encontrada. Saltando gráfico iterativo K-Means.\n")
+}
+
+# --- CLARA Iterativa ---
+if (algoritmo %in% c("TODOS", "CLARA") &&
+    "Cluster_CLARA_Iter" %in% colnames(coords_df)) {
+  
+  n_iter <- length(unique(na.omit(coords_df$Cluster_CLARA_Iter)))
+  cat(sprintf("\n=== GENERANDO GRÁFICO CLARA ITERATIVA (k=%d) ===\n", n_iter))
+  
+  paleta_iter <- if (n_iter <= 20) {
+    c("#E41A1C","#377EB8","#4DAF4A","#984EA3","#FF7F00",
+      "#A65628","#F781BF","#999999","#66C2A5","#FC8D62",
+      "#8DA0CB","#E78AC3","#A6D854","#FFD92F","#E5C494",
+      "#B3B3B3","#1B9E77","#D95F02","#7570B3","#E7298A")[seq_len(n_iter)]
+  } else {
+    hcl.colors(n_iter, palette = "Dynamic")
+  }
+  
+  p_iter <- ggplot(coords_df,
+                   aes(x = UMAP_1, y = UMAP_2, color = Cluster_CLARA_Iter)) +
+    geom_point(alpha = 0.6, size = 1.2) +
+    scale_color_manual(values = paleta_iter,
+                       name   = "Cluster",
+                       na.value = "grey80") +
+    labs(
+      title    = "CLARA — Subdivisión Iterativa",
+      subtitle = sprintf("k = %d  |  n = %d árboles", n_iter, nrow(coords_df)),
+      x        = "UMAP 1",
+      y        = "UMAP 2"
+    ) +
+    theme_minimal(base_size = 11) +
+    theme(
+      plot.title      = element_text(face = "bold", size = 12),
+      plot.subtitle   = element_text(color = "gray40", size = 9),
+      legend.position = if (n_iter > 15) "none" else "bottom"
+    ) +
+    guides(color = guide_legend(
+      override.aes = list(size = 3, alpha = 1),
+      ncol = 5
+    ))
+  
+  ruta_iter <- file.path(DIR_RESULTS,
+                         paste0("umap_clara_iterativa_", NOMBRE_BDD, ".png"))
+  ggsave(ruta_iter, plot = p_iter, width = 9, height = 7, dpi = 300)
+  cat("Gráfico CLARA iterativa guardado:", ruta_iter, "\n")
+  
+} else if (algoritmo %in% c("TODOS", "CLARA")) {
+  cat("Columna 'Cluster_CLARA_Iter' no encontrada. Saltando gráfico iterativo CLARA.\n")
+}
+
+# --- PAM Iterativa ---
+if (algoritmo %in% c("TODOS", "PAM") &&
+    "Cluster_PAM_Iter" %in% colnames(coords_df)) {
+  
+  n_iter <- length(unique(na.omit(coords_df$Cluster_PAM_Iter)))
+  cat(sprintf("\n=== GENERANDO GRÁFICO PAM ITERATIVA (k=%d) ===\n", n_iter))
+  
+  paleta_iter <- if (n_iter <= 20) {
+    c("#E41A1C","#377EB8","#4DAF4A","#984EA3","#FF7F00",
+      "#A65628","#F781BF","#999999","#66C2A5","#FC8D62",
+      "#8DA0CB","#E78AC3","#A6D854","#FFD92F","#E5C494",
+      "#B3B3B3","#1B9E77","#D95F02","#7570B3","#E7298A")[seq_len(n_iter)]
+  } else {
+    hcl.colors(n_iter, palette = "Dynamic")
+  }
+  
+  p_iter <- ggplot(coords_df,
+                   aes(x = UMAP_1, y = UMAP_2, color = Cluster_PAM_Iter)) +
+    geom_point(alpha = 0.6, size = 1.2) +
+    scale_color_manual(values = paleta_iter,
+                       name   = "Cluster",
+                       na.value = "grey80") +
+    labs(
+      title    = "PAM — Subdivisión Iterativa",
+      subtitle = sprintf("k = %d  |  n = %d árboles", n_iter, nrow(coords_df)),
+      x        = "UMAP 1",
+      y        = "UMAP 2"
+    ) +
+    theme_minimal(base_size = 11) +
+    theme(
+      plot.title      = element_text(face = "bold", size = 12),
+      plot.subtitle   = element_text(color = "gray40", size = 9),
+      legend.position = if (n_iter > 15) "none" else "bottom"
+    ) +
+    guides(color = guide_legend(
+      override.aes = list(size = 3, alpha = 1),
+      ncol = 5
+    ))
+  
+  ruta_iter <- file.path(DIR_RESULTS,
+                         paste0("umap_pam_iterativa_", NOMBRE_BDD, ".png"))
+  ggsave(ruta_iter, plot = p_iter, width = 9, height = 7, dpi = 300)
+  cat("Gráfico PAM iterativa guardado:", ruta_iter, "\n")
+  
+} else if (algoritmo %in% c("TODOS", "PAM")) {
+  cat("Columna 'Cluster_PAM_Iter' no encontrada. Saltando gráfico iterativo PAM.\n")
 }
 
 # =============================================================================

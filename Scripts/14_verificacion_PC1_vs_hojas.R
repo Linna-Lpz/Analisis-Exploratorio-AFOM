@@ -150,16 +150,16 @@ if (sd_hojas < 1e-10) {
   if (r_abs >= 0.80) {
     cat("  PC1 captura principalmente COBERTURA TAXONOMICA.\n")
     cat("  Los 130 clusteres serian estratos de cobertura.\n")
-    cat("  -> Reportar r en sec. 3.3.2 junto al 93,29 %.\n")
+    cat("  -> Reportar r junto al 93,29 %.\n")
     cat("  -> El pipeline opera sobre bosque injertado (cobertura uniforme),\n")
     cat("     por lo que el artefacto no afecta al clustering final.\n")
   } else if (r_abs >= 0.50) {
     cat("  PC1 tiene relacion PARCIAL con cobertura.\n")
-    cat("  -> Reportar r en sec. 3.3.2 como matizacion metodologica.\n")
+    cat("  -> Reportar r como matizacion metodologica.\n")
   } else {
     cat("  PC1 NO esta dominado por cobertura taxonomica.\n")
     cat("  Los 130 clusteres capturan variabilidad topologica real.\n")
-    cat("  -> Reportar r en sec. 3.3.2 como evidencia favorable.\n")
+    cat("  -> Reportar r como evidencia favorable.\n")
   }
 }
 

@@ -9,6 +9,10 @@ NOMBRE_BDD <- "OrthoMaM" # Nombre de la base de datos
 EXTENSION_ARBOLES <- ".rootree"
 CARPETA_ARBOLES <- "archiveTreesV12" # Nombre original de la carpeta con árboles
 
+# Variables de Parametrización Biológica (Adaptabilidad a otros organismos)
+TAXON_ID <- 9606          # ID taxonómico de NCBI (9606 = Homo sapiens) para mygene.info
+TAXON_GPROFILER <- "hsapiens" # Nombre corto del organismo para enriquecimiento GO (gprofiler2)
+
 # 2. Definición de Rutas Base 
 DIR_INPUT     <- here("Datos", "Original")
 DIR_PROCESSED <- here("Datos", "Procesados")     

@@ -59,10 +59,10 @@ A continuación se detalla la función de cada script del directorio `Scripts/`,
 | `10_grafico_enriquecimiento.R` (`10b`)| Visualización de términos GO más significativos. | Tabla de enriquecimiento | Gráfico de burbujas GO |
 | `11_mapa_de_calor.R` | Visualización integradora funcional (Heatmap). | Tabla de enriquecimiento | Heatmap cruzado de clústeres |
 | `12_validacion_nula_GO.R` | Modelo nulo para validación estocástica. | Listas HGNC de genes | Tabla y p-valor empírico, Histograma |
-| `18_calcular_BHI.R` | Índice de Homogeneidad Biológica empírico (BHI). | Clústeres e identificadores | Valor cuantitativo de BHI |
 | `evaluacion_sesgo.R` | Analiza el impacto analítico del injerto en árboles. | Topologías pre y post injerto | Gráfico de caja (sesgo evaluado) |
-| `analisis_nodos_aislados.R` | Identifica y caracteriza los nodos aislados del grafo MST-kNN: calcula su distribución de cobertura taxonómica original, la tasa de injerto promedio y aplica una prueba de Wilcoxon para determinar si su exclusión introduce sesgo en el análisis funcional. | `mstknn_iter_asignaciones.rds`, `matriz_rf.rds`, bosque en caché | `nodos_aislados_cobertura.csv` con cobertura y porcentaje de injerto de cada nodo aislado |
 | `run_pipeline.R` | Orquestador principal del KDD y dependencias. | `config.R`, Scripts | Pipeline completo procesado |
+
+![Diagrama del Pipeline](Diagrama%20run_pipeline.drawio.png)
 
 ---
 

@@ -198,9 +198,9 @@ if (!pipeline_interrumpido) {
   
   PASOS_DOWNSTREAM <- list(
     paso_07 = list(paste("07 — Iterar", ALGORITMO_DOWNSTREAM),   script_iterar),
-    paso_06a = list("06a — UMAP (Reducc. Dim.)",         "Scripts/05a_reduccion_dimensional_umap.R"),
-    paso_06b = list("06b — t-SNE (Reducc. Dim.)",        "Scripts/05c_reduccion_dimensional_tSNE.R"),
-    paso_06c = list("06c — PCA (Reducc. Dim.)",          "Scripts/05d_reduccion_dimensional_PCA.R"),
+    paso_06a = list(paste("06a — UMAP (Reducc. Dim.)", ALGORITMO_DOWNSTREAM),  "Scripts/05a_reduccion_dimensional_umap.R"),
+    paso_06b = list(paste("06b — t-SNE (Reducc. Dim.)", ALGORITMO_DOWNSTREAM), "Scripts/05c_reduccion_dimensional_tSNE.R"),
+    paso_06c = list(paste("06c — PCA (Reducc. Dim.)", ALGORITMO_DOWNSTREAM),   "Scripts/05d_reduccion_dimensional_PCA.R"),
     paso_08 = list(paste("08 — Etiquetas HGNC", ALGORITMO_DOWNSTREAM), "Scripts/08_etiquetas.R"),
     paso_09 = list(paste("09 — Enriquecimiento", ALGORITMO_DOWNSTREAM), "Scripts/09_enriquecimiento.R"),
     paso_10 = list(paste("10 — Burbujas Enriquecimiento", ALGORITMO_DOWNSTREAM), "Scripts/10_grafico_enriquecimiento.R")
@@ -271,26 +271,32 @@ if (nrow(errores) > 0) {
 
 if (!pipeline_interrumpido) {
   cat("\n  Pipeline completado exitosamente!\n")
+  
+  # Generar el Excel de reporte final de rendimiento si todo salió bien
+  if (!is.null(log_memoria) && nrow(log_memoria) > 0) {
+    ruta_rendimiento <- here("Resultados", "pipeline_tiempos_y_memoria_final.xlsx")
+    tryCatch({
+      wb_rend <- createWorkbook()
+      # Hoja 1: Tiempos (log_pipeline)
+      wb_rend <- agregar_hoja_formateada(wb_rend, "Tiempos_Ejecucion", "Tiempos por Script", log_pipeline, c(12, 45, 10, 12, 50))
+      # Hoja 2: Memoria (log_memoria)
+      wb_rend <- agregar_hoja_formateada(wb_rend, "Consumo_RAM", "Monitoreo RAM", log_memoria, c(22, 35, 12, 14, 16, 16, 10, 50))
+      
+      saveWorkbook(wb_rend, ruta_rendimiento, overwrite = TRUE)
+      cat("  [+] Reporte final de rendimiento (Excel) guardado en:", ruta_rendimiento, "\n")
+    }, error = function(e) cat("  [!] Aviso: no se pudo guardar Excel de rendimiento:", e$message, "\n"))
+  }
 }
 
-# Exportar Logs
+# Exportar Logs históricos (siempre se guardan con timestamp por seguridad)
 timestamp_str <- format(Sys.time(), "%Y%m%d_%H%M%S")
 ruta_log <- here("Resultados", paste0("pipeline_log_", timestamp_str, ".csv"))
 write.csv(log_pipeline, ruta_log, row.names = FALSE)
-cat("\n  Log general guardado en:", ruta_log, "\n")
+cat("\n  Log histórico guardado en:", ruta_log, "\n")
 
 if (!is.null(log_memoria) && nrow(log_memoria) > 0) {
   ruta_mem_csv <- here("Resultados", paste0("pipeline_memoria_", timestamp_str, ".csv"))
   write.csv(log_memoria, ruta_mem_csv, row.names = FALSE)
-  
-  ruta_mem_xlsx <- here("Resultados", paste0("pipeline_memoria_", timestamp_str, ".xlsx"))
-  tryCatch({
-    wb_mem <- createWorkbook()
-    wb_mem <- agregar_hoja_formateada(wb_mem, "Log_Memoria", "Monitoreo RAM", log_memoria, c(22, 35, 12, 14, 16, 16, 10, 50))
-    wb_mem <- agregar_hoja_formateada(wb_mem, "Resumen_Pipeline", "Resumen", log_pipeline, c(12, 45, 10, 12, 50))
-    saveWorkbook(wb_mem, ruta_mem_xlsx, overwrite = TRUE)
-    cat("  Log memoria (Excel) guardado en:", ruta_mem_xlsx, "\n")
-  }, error = function(e) cat("  Aviso: no se pudo guardar memoria Excel:", e$message, "\n"))
   
   cat("\n", strrep("-", 70), "\n   RESUMEN DE MEMORIA\n", strrep("-", 70), "\n")
   cat(sprintf("  Pico RAM R     : %.1f MB\n", max(log_memoria$RAM_R_MB, na.rm = TRUE)))
