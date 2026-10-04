@@ -40,46 +40,45 @@ terminos_compartidos <- df_filtrado %>%
 if (nrow(terminos_compartidos) == 0) {
   cat(sprintf("\nNo hay términos funcionales compartidos entre %d o más clusters para la ontología %s.\n", MIN_CLUSTERS, FUENTE_ANALIZAR))
   cat("El análisis de enriquecimiento es tan específico que cada clúster tiene su propia huella biológica única.\n")
-  cat("No se puede generar el gráfico de burbujas cruzado, abortando ejecución con éxito.\n")
-  quit(save = "no", status = 0)
+  cat("No se genera gráfico de burbujas cruzado.\n")
+} else {
+  # Quedarnos solo con los datos de esos términos top
+  df_plot <- df_filtrado %>%
+    filter(Termino %in% terminos_compartidos$Termino)
+  
+  # Acortar nombres muy largos para el gráfico
+  df_plot$Termino_Corto <- str_trunc(df_plot$Termino, width = 60, side = "right")
+  
+  # Ordenar los términos alfabéticamente
+  niveles_alfa <- sort(unique(str_trunc(df_plot$Termino, width = 60, side = "right")), 
+                       decreasing = TRUE)
+  df_plot$Termino_Corto <- factor(df_plot$Termino_Corto, levels = niveles_alfa)
+  
+  # Asegurar que los clusters se grafiquen como factores discretos (1, 2, 3...)
+  df_plot$Cluster <- factor(df_plot$Cluster, levels = sort(unique(as.numeric(df_plot$Cluster))))
+  
+  # 4. Generar el Gráfico de Burbujas
+  p_cruzado <- ggplot(df_plot, aes(x = Cluster, y = Termino_Corto)) +
+    geom_point(aes(size = as.numeric(N_Genes_en_Termino), fill = log10_FDR), 
+               shape = 21, alpha = 0.8, color = "black") +
+    scale_fill_viridis_c(option = "plasma", name = "-log10(FDR)\n(Significancia)") +
+    scale_size_continuous(range = c(2, 8), name = "Genes en\nel término") +
+    theme_minimal(base_size = 12) +
+    theme(
+      panel.grid.major.x = element_line(color = "gray90", linetype = "dashed"),
+      panel.grid.major.y = element_line(color = "gray80", linetype = "dotted"),
+      axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),
+      axis.text.y = element_text(size = 10, color = "black"),
+      plot.title = element_text(face = "bold", size = 14)
+    ) +
+    labs(
+      title = "Convergencia Funcional entre Clusters Evolutivos",
+      subtitle = paste("Términos de", FUENTE_ANALIZAR, "presentes en múltiples clusters"),
+      x = "ID del Cluster",
+      y = "Proceso Biológico (GO:BP)"
+    )
+  
+  # 5. Mostrar y guardar
+  ruta_plot <- file.path(DIR_RESULTS, paste0("Grafico_Burbujas_Cruzado_", gsub("-","",tolower(algoritmo)), "_", NOMBRE_BDD, ".png"))
+  ggsave(ruta_plot, plot = p_cruzado, width = 12, height = 8, dpi = 300)
 }
-
-# Quedarnos solo con los datos de esos términos top
-df_plot <- df_filtrado %>%
-  filter(Termino %in% terminos_compartidos$Termino)
-
-# Acortar nombres muy largos para el gráfico
-df_plot$Termino_Corto <- str_trunc(df_plot$Termino, width = 60, side = "right")
-
-# Ordenar los términos alfabéticamente
-niveles_alfa <- sort(unique(str_trunc(df_plot$Termino, width = 60, side = "right")), 
-                     decreasing = TRUE)
-df_plot$Termino_Corto <- factor(df_plot$Termino_Corto, levels = niveles_alfa)
-
-# Asegurar que los clusters se grafiquen como factores discretos (1, 2, 3...)
-df_plot$Cluster <- factor(df_plot$Cluster, levels = sort(unique(as.numeric(df_plot$Cluster))))
-
-# 4. Generar el Gráfico de Burbujas
-p_cruzado <- ggplot(df_plot, aes(x = Cluster, y = Termino_Corto)) +
-  geom_point(aes(size = as.numeric(N_Genes_en_Termino), fill = log10_FDR), 
-             shape = 21, alpha = 0.8, color = "black") +
-  scale_fill_viridis_c(option = "plasma", name = "-log10(FDR)\n(Significancia)") +
-  scale_size_continuous(range = c(2, 8), name = "Genes en\nel término") +
-  theme_minimal(base_size = 12) +
-  theme(
-    panel.grid.major.x = element_line(color = "gray90", linetype = "dashed"),
-    panel.grid.major.y = element_line(color = "gray80", linetype = "dotted"),
-    axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),
-    axis.text.y = element_text(size = 10, color = "black"),
-    plot.title = element_text(face = "bold", size = 14)
-  ) +
-  labs(
-    title = "Convergencia Funcional entre Clusters Evolutivos",
-    subtitle = paste("Términos de", FUENTE_ANALIZAR, "presentes en múltiples clusters"),
-    x = "ID del Cluster",
-    y = "Proceso Biológico (GO:BP)"
-  )
-
-# 5. Mostrar y guardar
-ruta_plot <- file.path(DIR_RESULTS, paste0("Grafico_Burbujas_Cruzado_", gsub("-","",tolower(algoritmo)), "_", NOMBRE_BDD, ".png"))
-ggsave(ruta_plot, plot = p_cruzado, width = 12, height = 8, dpi = 300)

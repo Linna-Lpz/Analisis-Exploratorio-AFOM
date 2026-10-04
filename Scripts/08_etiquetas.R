@@ -13,7 +13,7 @@ source(here::here("Scripts", "00_funciones_globales.R"))
 # PARÁMETROS
 # =============================================================================
 TAMANO_LOTE   <- 1000   # mygene.info acepta hasta 1000 IDs por request
-ESPECIE       <- 9606   # 9606 = Homo sapiens (taxid NCBI)
+ESPECIE       <- if (exists("TAXON_ID")) TAXON_ID else 9606   # Definido en config.R
 # alternativa: 9443 = Primates (orden, no especie)
 # Si quieres sin filtro de especie: ESPECIE <- NULL
 

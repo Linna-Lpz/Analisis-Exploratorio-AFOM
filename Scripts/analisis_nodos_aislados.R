@@ -148,18 +148,4 @@ ruta_csv_out <- file.path(DIR_RESULTS, "nodos_aislados_cobertura.csv")
 write.csv(aislados_con_cobertura, ruta_csv_out, row.names = FALSE)
 cat(sprintf("  CSV guardado: %s\n", ruta_csv_out))
 
-# 9. Resumen final
-cat("\n=== RESUMEN PARA EL INFORME ===\n")
-cat(sprintf("Corpus total OrthoMaM:          %d árboles\n", n_total))
-cat(sprintf("Nodos en grafo MST-kNN (k=5):   %d árboles\n", n_asignados))
-cat(sprintf("Nodos aislados (excluidos):      %d árboles (%.2f%% del corpus)\n",
-            n_aislados, 100 * n_aislados / n_total))
-if (n_encontrados_aislados > 0) {
-  cat(sprintf("\nCobertura original nodos aislados:\n"))
-  cat(sprintf("  Media = %.1f esp., Mediana = %.0f esp., Mín = %d, Máx = %d\n",
-              mean(cob_aislados), median(cob_aislados), min(cob_aislados), max(cob_aislados)))
-  cat(sprintf("  Porcentaje promedio de hojas injertadas: %.1f%%\n", mean(pct_injerto_aislados)))
-  cat(sprintf("\nCobertura original corpus general:\n"))
-  cat(sprintf("  Media = %.1f esp., Mediana = %.0f esp.\n", mean(cob_global), median(cob_global)))
-}
 cat("\n=== FIN DEL ANÁLISIS ===\n")

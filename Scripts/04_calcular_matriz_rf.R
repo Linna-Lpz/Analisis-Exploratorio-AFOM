@@ -52,18 +52,6 @@ rm(arboles_conjunto)
 gc(verbose = FALSE)
 
 # =============================================================================
-# EXPORTAR TAMBIÉN COMO CSV (opcional, para inspección externa)
-# =============================================================================
-#ruta_csv <- file.path(DIR_RESULTS, "matriz_rf_conjunto.csv")
-#write.table(matriz_cuadrada,
-#            file      = ruta_csv,
-#            sep       = ";",
-#            row.names = TRUE,
-#            col.names = NA,
-#            quote     = FALSE)
-#cat("Copia CSV guardada en:", ruta_csv, "\n")
-
-# =============================================================================
 # REPORTE DE TIEMPOS EN EXCEL
 # =============================================================================
 t_lectura <- as.numeric(tiempo_lectura)

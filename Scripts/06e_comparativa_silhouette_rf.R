@@ -190,9 +190,7 @@ cat(sprintf("\nMejor algoritmo según Silhouette (sobre dist_rf): %s (Sil=%.3f)\
             tabla_comparativa$Algoritmo[idx_mejor],
             tabla_comparativa$Silhouette[idx_mejor]))
 
-# =============================================================================
-# 5. COMPARACIÓN CON VALORES ORIGINALES REPORTADOS EN EL LATEX
-# =============================================================================
+
 originales_df <- data.frame(
   Algoritmo         = c("CLARA (k=2)", "MST-kNN (k=5)", "K-Means (k=2)", "PAM (k=2)"),
   Sil_Original      = c(0.577, 0.234, 0.165, 0.007),
@@ -201,11 +199,6 @@ originales_df <- data.frame(
   stringsAsFactors  = FALSE
 )
 
-cat("\n=== COMPARACIÓN CON VALORES ORIGINALMENTE REPORTADOS ===\n")
-print(originales_df)
-cat("\nNota: Los valores originales de CLARA y K-Means NO son comparables\n")
-cat("      con PAM porque usan espacios métricos distintos.\n")
-cat("      Los valores recalculados arriba son comparables entre sí.\n")
 
 # =============================================================================
 # 6. GUARDAR RESULTADOS

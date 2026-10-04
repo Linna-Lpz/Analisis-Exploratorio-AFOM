@@ -13,7 +13,7 @@ source(here::here("Scripts", "00_funciones_globales.R"))
 # =============================================================================
 # PARÁMETROS
 # =============================================================================
-ORGANISMO         <- "hsapiens"     # Homo sapiens
+ORGANISMO         <- if (exists("TAXON_GPROFILER")) TAXON_GPROFILER else "hsapiens"
 FUENTES           <- c("GO:BP",     # Gene Ontology — Biological Process
                        "GO:MF",    # Gene Ontology — Molecular Function
                        "GO:CC")    # Gene Ontology — Cellular Component
@@ -222,12 +222,27 @@ tiempo_total <- as.numeric(proc.time() - tiempo_total)[3]
 cat(sprintf("\nEnriquecimiento completado en %.1f segundos.\n", tiempo_total))
 
 # Tabla combinada de todos los clusters
-resultados_df <- do.call(rbind, Filter(Negate(is.null), resultados_todos))
-rownames(resultados_df) <- NULL
+lista_validos <- Filter(Negate(is.null), resultados_todos)
+
+if (length(lista_validos) > 0) {
+  resultados_df <- do.call(rbind, lista_validos)
+  rownames(resultados_df) <- NULL
+  n_terminos_totales <- nrow(resultados_df)
+} else {
+  # Crear un dataframe dummy con la estructura para no romper scripts downstream
+  resultados_df <- data.frame(
+    Cluster = character(), N_Genes_Cluster = numeric(), Fuente = character(),
+    Term_ID = character(), Termino = character(), FDR = numeric(),
+    N_Genes_en_Termino = numeric(), Tamano_Termino = numeric(),
+    Tamano_Query = numeric(), effective_domain_size = numeric(),
+    Genes_en_Termino = character(), stringsAsFactors = FALSE
+  )
+  n_terminos_totales <- 0
+}
 
 cat(sprintf("Clusters con términos significativos: %d de %d\n",
             sum(resumen_enrich$N_Terminos_Sig > 0), length(clusters_unicos)))
-cat(sprintf("Total términos significativos        : %d\n", nrow(resultados_df)))
+cat(sprintf("Total términos significativos        : %d\n", n_terminos_totales))
 
 # =============================================================================
 # 4. GRÁFICOS — top términos por cluster (solo clusters con resultados)

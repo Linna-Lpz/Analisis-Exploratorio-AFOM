@@ -77,16 +77,24 @@ for (n_arboles in TAMANOS_PRUEBA) {
   t_inicio_homog <- Sys.time()
   mem_antes_homog <- registrar_memoria()
   
-  # Usar el primer árbol de la muestra como "pseudo-medioide" de referencia
-  tree1 <- arboles_muestra[[1]]
-  arboles_homogeneizados <- list()
-  arboles_homogeneizados[[1]] <- tree1
+  # Usar un árbol completo (190 especies) como medoide para asegurar homogeneización perfecta
+  idx_medoide <- which(sapply(todos_los_arboles, function(x) length(x$tip.label)) == length(especies_globales))[1]
+  tree_medoid <- todos_los_arboles[[idx_medoide]]
   
-  for (i in 2:n_arboles) {
+  arboles_homogeneizados <- list()
+  
+  for (i in 1:n_arboles) {
     tree2 <- arboles_muestra[[i]]
-    res <- unir_por_ancla(tree1, tree2)
-    if (!is.null(res$arbol)) {
-      arboles_homogeneizados[[i]] <- res$arbol
+    # Si ya tiene todas las especies, no injertar
+    if (length(tree2$tip.label) == length(especies_globales)) {
+      arboles_homogeneizados[[i]] <- tree2
+    } else {
+      res <- unir_por_ancla(tree_medoid, tree2)
+      if (!is.null(res$arbol)) {
+        arboles_homogeneizados[[i]] <- res$arbol
+      } else {
+        arboles_homogeneizados[[i]] <- tree_medoid
+      }
     }
   }
   
@@ -98,10 +106,12 @@ for (n_arboles in TAMANOS_PRUEBA) {
   t_inicio_rf <- Sys.time()
   mem_antes_rf <- registrar_memoria()
   
-  # Para pruebas usamos una matriz RF normalizada (requiere clase multiphylo)
-  # multiphylo_obj <- do.call(c, arboles_homogeneizados)
-  # matriz_rf <- dist.topo(multiphylo_obj, method = "score")
-  Sys.sleep(1) # Reemplazar con llamado a dist.topo real
+  # Cálculo de la matriz Robinson-Foulds normalizada
+  multiphylo_obj <- do.call(c, arboles_homogeneizados)
+  matriz_distancias <- TreeDist::RobinsonFoulds(multiphylo_obj, normalize = TRUE)
+  matriz_rf <- as.matrix(matriz_distancias)
+  rownames(matriz_rf) <- paste0("T", 1:n_arboles)
+  colnames(matriz_rf) <- paste0("T", 1:n_arboles)
   
   t_fin_rf <- Sys.time()
   tiempo_rf <- as.numeric(difftime(t_fin_rf, t_inicio_rf, units = "secs"))
@@ -109,15 +119,9 @@ for (n_arboles in TAMANOS_PRUEBA) {
   # 3. TIEMPO DE CLUSTERING (MST-kNN)
   cat("  3. Clustering MST-kNN...\n")
   t_inicio_mst <- Sys.time()
-  # simulamos una matriz de distancia aleatoria del tamaño N x N para medir MST-kNN
-  matriz_simulada <- matrix(runif(n_arboles^2), nrow=n_arboles)
-  matriz_simulada[lower.tri(matriz_simulada)] <- t(matriz_simulada)[lower.tri(matriz_simulada)]
-  diag(matriz_simulada) <- 0
-  rownames(matriz_simulada) <- paste0("T", 1:n_arboles)
-  colnames(matriz_simulada) <- paste0("T", 1:n_arboles)
   
   tryCatch({
-    mst_res <- mst.knn(distance.matrix = matriz_simulada)
+    mst_res <- mst.knn(distance.matrix = matriz_rf)
   }, error = function(e) { NULL })
   
   t_fin_mst <- Sys.time()
@@ -126,7 +130,7 @@ for (n_arboles in TAMANOS_PRUEBA) {
   # 4. TIEMPO UMAP
   cat("  4. UMAP...\n")
   t_inicio_umap <- Sys.time()
-  umap_res <- umap(matriz_simulada, n_neighbors = 15, min_dist = 0.1)
+  umap_res <- umap(matriz_rf, n_neighbors = 15, min_dist = 0.1)
   t_fin_umap <- Sys.time()
   tiempo_umap <- as.numeric(difftime(t_fin_umap, t_inicio_umap, units = "secs"))
   

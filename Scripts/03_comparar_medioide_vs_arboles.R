@@ -265,6 +265,52 @@ saveWorkbook(wb, ruta_comparaciones_output, overwrite = TRUE)
 cat("Log de comparaciones guardado en:", ruta_comparaciones_output, "\n")
 
 cat("\n=== COMPLETADA ===\n")
+
+
+# =============================================================================
+# Función auxiliar: obtener todos los nodos (tips + internos) de un clado
+# =============================================================================
+obtener_nodos_clado <- function(tree, nodo_raiz) {
+  edge  <- tree$edge
+  pila  <- nodo_raiz
+  nodos <- c()
+  while (length(pila) > 0) {
+    actual <- pila[1]
+    pila   <- pila[-1]
+    nodos  <- c(nodos, actual)
+    hijos  <- edge[edge[, 1] == actual, 2]
+    pila   <- c(pila, hijos)
+  }
+  nodos
+}
+
+# =============================================================================
+# Función auxiliar: vector de colores de rama para un árbol unido
+#   - azul   -> ramas que pertenecen al medioide (tree1)
+#   - naranja -> ramas que pertenecen al árbol injertado (tree2)
+# =============================================================================
+colorear_ramas_union <- function(arbol_union, tips_tree2,
+                                 color_medioide = "steelblue",
+                                 color_injertado = "darkorange") {
+  
+  tips_tree2_presentes <- intersect(tips_tree2, arbol_union$tip.label)
+  
+  if (length(tips_tree2_presentes) == 0) {
+    return(rep(color_medioide, nrow(arbol_union$edge)))
+  }
+  
+  if (length(tips_tree2_presentes) == 1) {
+    nodo_injertado <- which(arbol_union$tip.label == tips_tree2_presentes)
+  } else {
+    nodo_injertado <- getMRCA(arbol_union, tip = tips_tree2_presentes)
+  }
+  
+  nodos_injertados <- obtener_nodos_clado(arbol_union, nodo_injertado)
+  
+  ifelse(arbol_union$edge[, 2] %in% nodos_injertados,
+         color_injertado, color_medioide)
+}
+
 #_____________________________________ TEST ___________________________________________
 # ── Cambiar este valor para explorar distintos árboles ────────────
 ARBOL_A_VER <- "56139_NT_AL.rootree"   # índice numérico, o por nombre: "nombre_del_arbol"
@@ -296,16 +342,28 @@ plot(tree2_viz,
      main           = paste0(nombre_viz, "\n(", length(tree2_viz$tip.label), " tips)"),
      cex.main       = 0.9)
 
-# Panel 3: árbol unido
+# Panel 3: árbol unido (coloreado por origen: medioide vs injertado)
 if (!is.null(resultado_viz$arbol)) {
+  
+  colores_ramas <- colorear_ramas_union(resultado_viz$arbol,
+                                        tips_tree2 = tree2_viz$tip.label,
+                                        color_medioide  = "steelblue",
+                                        color_injertado = "darkorange")
+  
   plot(resultado_viz$arbol,
        type           = "fan",
        show.tip.label = FALSE,
-       edge.color     = "forestgreen",
+       edge.color     = colores_ramas,
        edge.width     = 0.8,
        main           = paste0("UNIÓN\n(", length(resultado_viz$arbol$tip.label), " tips)",
                                "\nAncla: ", resultado_viz$ancla),
        cex.main       = 0.9)
+  
+  legend("bottomright",
+         legend = c("Medioide", "Injertado"),
+         col    = c("steelblue", "darkorange"),
+         lwd    = 2, bty = "n", cex = 0.8)
+  
 } else {
   plot.new()
   text(0.5, 0.5, paste("ERROR:\n", resultado_viz$error), cex = 1.2, col = "red")
