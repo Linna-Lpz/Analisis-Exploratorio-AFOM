@@ -14,8 +14,21 @@ library(mstknnclust)
 source(here::here("Scripts", "config.R"))
 source(here::here("Scripts", "00_funciones_globales.R"))
 
-# Metodo de clustering a utilizar: "clara", "kmeans" o "mst-knn"
-METODO_CLUSTERING <- "mst-knn"
+# Metodo de clustering: se hereda de ALGORITMO_DOWNSTREAM si está definido
+# (patrón estándar del pipeline), o se puede sobreescribir manualmente.
+# Valores válidos: "clara", "kmeans", "mst-knn"
+METODO_CLUSTERING <- if (exists("ALGORITMO_DOWNSTREAM")) {
+  switch(toupper(ALGORITMO_DOWNSTREAM),
+    "CLARA"   = "clara",
+    "K-MEANS" = "kmeans",
+    "KMEANS"  = "kmeans",
+    "MST-KNN" = "mst-knn",
+    "MSTKNN"  = "mst-knn",
+    "mst-knn"   # fallback por defecto
+  )
+} else {
+  "mst-knn"   # valor por defecto cuando se ejecuta directamente
+}
 
 # =============================================================================
 # 1. CARGAR CONJUNTO CORE SET (ARBOLES COMPLETOS) DESDE CACHE

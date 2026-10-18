@@ -13,13 +13,33 @@ source(here::here("Scripts", "config.R"))
 
 cat("\n=== INICIANDO VALIDACIÓN DE SESGO DE INJERTO VS ENRIQUECIMIENTO ===\n")
 
-# Definir el algoritmo a evaluar (puede ajustarse según necesidad)
-algoritmo <- "mstknn"
+# Usar ALGORITMO_DOWNSTREAM si está definido (patrón estándar del pipeline),
+# si no, detectar automáticamente el archivo disponible.
+algoritmo <- if (exists("ALGORITMO_DOWNSTREAM")) ALGORITMO_DOWNSTREAM else "AUTO"
 
 # 2. Cargar datos
-ruta_conteos <- file.path(DIR_RESULTS, paste0("especies_analisis_", NOMBRE_BDD, ".xlsx"))
+ruta_conteos  <- file.path(DIR_RESULTS, paste0("especies_analisis_", NOMBRE_BDD, ".xlsx"))
 ruta_clusters <- file.path(DIR_RESULTS, paste0("pca_coordenadas_", NOMBRE_BDD, ".xlsx"))
-ruta_enriquecimiento <- file.path(DIR_RESULTS, paste0("enrichment_funcional_", gsub("-","",tolower(algoritmo)), "_", NOMBRE_BDD, ".xlsx"))
+
+# Resolver la ruta del archivo de enriquecimiento según el algoritmo activo
+if (toupper(algoritmo) == "AUTO") {
+  # Detectar automáticamente el primer archivo disponible
+  candidatos <- list.files(DIR_RESULTS,
+    pattern = paste0("^enrichment_funcional_.*_", NOMBRE_BDD, "\\.xlsx$"),
+    full.names = TRUE)
+  if (length(candidatos) == 0)
+    stop("No se encontró ningún archivo de enriquecimiento en:\n  ", DIR_RESULTS,
+         "\nEjecuta primero 09_enriquecimiento.R")
+  ruta_enriquecimiento <- candidatos[1]
+  cat("  Enriquecimiento detectado automáticamente:", basename(ruta_enriquecimiento), "\n")
+} else {
+  ruta_enriquecimiento <- file.path(DIR_RESULTS,
+    paste0("enrichment_funcional_", gsub("-", "", tolower(algoritmo)), "_", NOMBRE_BDD, ".xlsx"))
+  if (!file.exists(ruta_enriquecimiento))
+    stop("Archivo de enriquecimiento no encontrado:\n  ", ruta_enriquecimiento,
+         "\nAlgoritmo activo: ", algoritmo,
+         "\nEjecuta primero 09_enriquecimiento.R con ALGORITMO_DOWNSTREAM = '", algoritmo, "'")
+}
 
 # a) Cobertura original por árbol (conteo de hojas/especies antes del injerto)
 archivos_bosque <- list.files(DIR_CACHE, pattern = "^bosque_.*\\.rds$", full.names = TRUE)

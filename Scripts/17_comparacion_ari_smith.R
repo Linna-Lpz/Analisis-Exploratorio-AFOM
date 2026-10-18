@@ -66,6 +66,9 @@ asig_smith_df <- data.frame(
 # 4. COMPARAR CONTRA EL CLUSTERING RF (control_324_clustering_....xlsx)
 # =============================================================================
 ruta_cl_control <- file.path(DIR_RESULTS, paste0("control_324_clustering_", NOMBRE_BDD, ".xlsx"))
+if (!file.exists(ruta_cl_control))
+  stop("Archivo de clustering control no encontrado:\n  ", ruta_cl_control,
+       "\nEjecuta primero 15_control_324_arboles_completos.R")
 asig_control <- read.xlsx(ruta_cl_control, sheet = "Asignaciones", startRow = 2)
 
 # Cruce correcto: por nombre real de arbol (Arbol), no por indice numerico
